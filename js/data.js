@@ -313,6 +313,20 @@ RB.programs = [
     ],
     daysPerWeek: 5, weeks: 8, activityFactor: 1.4,
   },
+  {
+    id: "custom", name: "Custom Builder", status: "soon",
+    tagline: "Design your own training week",
+    summary: "Build a plan around exactly the training you want — pick the styles, then choose which days each one lands on.",
+    details: [
+      "High-intensity: HIIT intervals, CrossFit-style WODs and metcons",
+      "Endurance: running, cycling, swimming or rowing",
+      "Strength: barbell lifting or functional bodybuilding",
+      "Mobility, core and active-recovery days",
+      "Assign each workout type to the days that fit your schedule",
+    ],
+    daysPerWeek: 0, weeks: 0, activityFactor: 1.5,
+    meta: "You choose the styles, days and length",
+  },
 ];
 
 // ---- Baseline assessment ----
@@ -364,6 +378,40 @@ RB.seedMap = {
   "pendlay-row": { s: "bench", f: 0.75 }, "cs-row-heavy": { s: "bench", f: 0.75 }, "one-arm-row": { s: "bench", f: 0.35 },
   "hip-thrust": { s: "squat", f: 0.9 }, "hip-thrust-heavy": { s: "squat", f: 1 },
 };
+
+// ---- Trackable benchmarks (Progress tab) ----
+// Specific, measurable, retestable. Each keeps a dated history so you can see
+// change over time. `better` sets which direction is an improvement. `seed`
+// pulls the baseline value from the assessment so entry #1 is your day-zero.
+//   type: "weight" (lb) | "reps" | "seconds" | "time" (stored as seconds)
+RB.benchmarkTests = [
+  { id: "squat1rm", group: "Strength", label: "Back squat 1RM", type: "weight", better: "higher",
+    hint: "Heaviest single, or an estimate.", seed: { lift: "squat" } },
+  { id: "bench1rm", group: "Strength", label: "Bench press 1RM", type: "weight", better: "higher",
+    hint: "Heaviest single, or an estimate.", seed: { lift: "bench" } },
+  { id: "dead1rm", group: "Strength", label: "Deadlift 1RM", type: "weight", better: "higher",
+    hint: "Heaviest single, or an estimate.", seed: { lift: "deadlift" } },
+  { id: "press1rm", group: "Strength", label: "Overhead press 1RM", type: "weight", better: "higher",
+    hint: "Heaviest strict single.", seed: { lift: "press" } },
+
+  { id: "pushups", group: "Muscular endurance", label: "Max push-ups", type: "reps", better: "higher",
+    hint: "One unbroken set, good form.", seed: { field: "pushups" } },
+  { id: "pullups", group: "Muscular endurance", label: "Max strict pull-ups", type: "reps", better: "higher",
+    hint: "Dead hang to chin, no kip.", seed: { field: "pullups" } },
+  { id: "plank", group: "Muscular endurance", label: "Plank hold", type: "seconds", better: "higher",
+    hint: "Straight line, until the hips drop.", seed: { field: "plank" } },
+  { id: "deadhang", group: "Muscular endurance", label: "Dead hang", type: "seconds", better: "higher",
+    hint: "Hang from the bar as long as you can." },
+
+  { id: "run15", group: "Endurance", label: "1.5-mile run", type: "time", better: "lower",
+    hint: "The standard aerobic field test.", seed: { time: "runTest" } },
+  { id: "mile", group: "Endurance", label: "1-mile run", type: "time", better: "lower",
+    hint: "All-out mile on a track or flat route." },
+  { id: "run5k", group: "Endurance", label: "5K run", type: "time", better: "lower",
+    hint: "5 km time trial — the program's week-12 test." },
+  { id: "restHr", group: "Endurance", label: "Resting heart rate", type: "reps", better: "lower",
+    hint: "BPM first thing in the morning, still in bed." },
+];
 
 // ---- Goals (drive the calorie/protein calculation) ----
 RB.goals = [

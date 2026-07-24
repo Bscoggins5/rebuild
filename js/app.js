@@ -13,6 +13,7 @@
     shoppingChecks: {},
     checkIns: [],
     benchmarks: { fiveK: "", pullups: "10", easyPace: "10:00" },
+    benchmarkLog: {},
     readiness: { date: "", sleep: "7", soreness: "low" },
     profile: {
       onboarded: false,
@@ -81,9 +82,17 @@
     store.readiness = Object.assign(clone(initialState.readiness), store.readiness || {});
     store.profile = Object.assign(clone(initialState.profile), store.profile || {});
     if (!Array.isArray(store.checkIns)) store.checkIns = [];
-    ["workoutLogs", "runLogs", "completedWorkouts", "completedMeals", "shoppingChecks"].forEach(function (k) {
+    ["workoutLogs", "runLogs", "completedWorkouts", "completedMeals", "shoppingChecks", "benchmarkLog"].forEach(function (k) {
       if (!store[k] || typeof store[k] !== "object") store[k] = {};
     });
+    // Migrate the old free-text benchmarks into the dated benchmark log once.
+    if (!Object.keys(store.benchmarkLog).length && store.benchmarks) {
+      var today0 = todayISO();
+      var f5 = parseTime(store.benchmarks.fiveK);
+      if (f5) store.benchmarkLog.run5k = [{ date: today0, value: f5 }];
+      var pu = toNum(store.benchmarks.pullups);
+      if (pu) store.benchmarkLog.pullups = [{ date: today0, value: pu }];
+    }
     var w = Number(store.currentWeek);
     store.currentWeek = w >= 1 && w <= 12 ? Math.floor(w) : 1;
   }
@@ -607,7 +616,7 @@
           '<p class="pc-tagline">' + esc(p.tagline) + "</p>" +
           "<p>" + esc(p.summary) + "</p><ul>";
         p.details.forEach(function (x) { html += "<li>" + esc(x) + "</li>"; });
-        html += "</ul><div class=\"pc-meta\">" + p.weeks + " weeks · " + p.daysPerWeek + " days/week</div></article>";
+        html += "</ul><div class=\"pc-meta\">" + esc(p.meta || (p.weeks + " weeks · " + p.daysPerWeek + " days/week")) + "</div></article>";
       });
       html += "</div>";
     }
@@ -767,8 +776,9 @@
     html += '<div class="progression-note">' + esc(tier.note) + "</div>";
 
     html += '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Adjust</span><h2>Your setup</h2></div></div>' +
+      '<p class="setup-hint">Changed weight, hit a new max, or want to update your goal? Redo the assessment — your logged workouts and history are kept.</p>' +
+      '<button class="primary-button setup-primary" type="button" data-action="redo-assessment">Redo initial assessment</button>' +
       '<div class="home-actions">' +
-      '<button class="secondary-button" type="button" data-action="redo-assessment">Redo assessment</button>' +
       '<button class="secondary-button" type="button" data-action="change-program">Change program</button>' +
       "</div></section>";
 
@@ -780,7 +790,7 @@
       html += '<article class="program-card' + (ready ? "" : " soon") + '">' +
         '<div class="pc-head"><h2>' + esc(x.name) + '</h2><span class="pc-badge">' + (ready ? "Ready" : "Coming soon") + "</span></div>" +
         '<p class="pc-tagline">' + esc(x.tagline) + "</p><p>" + esc(x.summary) + "</p>" +
-        '<div class="pc-meta">' + x.weeks + " weeks · " + x.daysPerWeek + " days/week</div></article>";
+        '<div class="pc-meta">' + esc(x.meta || (x.weeks + " weeks · " + x.daysPerWeek + " days/week")) + "</div></article>";
     });
     html += "</div></section>";
 
@@ -1476,7 +1486,9 @@
       }
       case "redo-assessment":
         ui.draft = clone(store.profile);
-        ui.onboardStep = 2;
+        // Start at "About you" so every number is editable (metrics, ability,
+        // lifts, goals), not just the field tests.
+        ui.onboardStep = 1;
         store.profile.onboarded = false;
         save();
         render(); goTop();

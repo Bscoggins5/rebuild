@@ -326,7 +326,9 @@ summary { cursor: pointer; font-weight: 850; }
 .gap-note strong { color: var(--amber); display: block; font-size: 14px; }
 .gap-note p { color: var(--muted); font-size: 13px; margin: 5px 0 0; }
 .swap-chip { background: rgba(137, 232, 168, 0.14); border-radius: 6px; color: var(--accent); font-size: 10px; font-style: normal; font-weight: 900; letter-spacing: 0.04em; margin-left: 6px; padding: 2px 6px; }
-.home-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.setup-hint { color: var(--muted); font-size: 14px; margin: 0 0 12px; }
+.setup-primary { width: 100%; }
+.home-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
 .home-actions .secondary-button { flex: 1; min-width: 150px; }
 
 .bottom-nav[hidden] { display: none; }
