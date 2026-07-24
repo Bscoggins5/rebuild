@@ -1,0 +1,8 @@
+# Local dev only — not part of the published site
+tools/
+.claude/
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store
