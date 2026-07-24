@@ -409,7 +409,7 @@ RB.benchmarkTests = [
     hint: "All-out mile on a track or flat route." },
   { id: "run5k", group: "Endurance", label: "5K run", type: "time", better: "lower",
     hint: "5 km time trial — the program's week-12 test." },
-  { id: "restHr", group: "Endurance", label: "Resting heart rate", type: "reps", better: "lower",
+  { id: "restHr", group: "Endurance", label: "Resting heart rate", type: "bpm", better: "lower",
     hint: "BPM first thing in the morning, still in bed." },
 ];
 

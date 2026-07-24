@@ -1164,6 +1164,103 @@
     return svg + "</svg>";
   }
 
+  // ---- benchmark tracker ----
+  function benchTestById(id) {
+    for (var i = 0; i < RB.benchmarkTests.length; i++) if (RB.benchmarkTests[i].id === id) return RB.benchmarkTests[i];
+    return null;
+  }
+  // "1:30" duration without a padded leading minute (unlike fmtTimer).
+  function fmtClock(secs) { return Math.floor(secs / 60) + ":" + String(Math.round(secs % 60)).padStart(2, "0"); }
+  // Turn a typed value into a stored number (times -> seconds).
+  function benchParse(test, raw) {
+    if (!test) return 0;
+    return test.type === "time" ? parseTime(raw) : toNum(raw);
+  }
+  function benchFormat(test, v) {
+    switch (test.type) {
+      case "weight": return Math.round(v) + " lb";
+      case "reps": return Math.round(v) + (Math.round(v) === 1 ? " rep" : " reps");
+      case "bpm": return Math.round(v) + " bpm";
+      case "seconds": return v >= 60 ? fmtClock(v) : Math.round(v) + "s";
+      case "time": return fmtClock(v);
+      default: return String(v);
+    }
+  }
+  // Magnitude of a change, formatted like the value but without a leading sign.
+  function benchMag(test, v) {
+    v = Math.abs(v);
+    switch (test.type) {
+      case "weight": return Math.round(v) + " lb";
+      case "reps": return Math.round(v) + " reps";
+      case "bpm": return Math.round(v) + " bpm";
+      case "seconds": case "time": return v >= 60 ? fmtClock(v) : Math.round(v) + "s";
+      default: return String(v);
+    }
+  }
+  // Change from the first (baseline) result to the latest, with an arrow and a
+  // good/bad tone that respects whether higher or lower is the improvement.
+  function benchDelta(test, arr) {
+    if (!arr || arr.length < 2) return null;
+    var baseline = arr[0].value, latest = arr[arr.length - 1].value;
+    var diff = latest - baseline;
+    if (diff === 0) return { text: "No change since baseline", tone: "" };
+    var improved = test.better === "higher" ? diff > 0 : diff < 0;
+    var arrow = diff > 0 ? "▲" : "▼";
+    return { text: arrow + " " + benchMag(test, diff) + " since baseline", tone: improved ? "good" : "bad" };
+  }
+  // Seed each benchmark's first entry from the assessment so day-zero is
+  // captured. Runs once per benchmark (skips any that already have history).
+  function seedBenchmarks() {
+    var p = store.profile;
+    if (!p || !p.onboarded) return;
+    var date = p.startDate || todayISO();
+    RB.benchmarkTests.forEach(function (t) {
+      if (!t.seed) return;
+      if (store.benchmarkLog[t.id] && store.benchmarkLog[t.id].length) return;
+      var raw = t.seed.lift ? (p.lifts || {})[t.seed.lift] : (t.seed.field ? p[t.seed.field] : (t.seed.time ? p[t.seed.time] : ""));
+      var v = benchParse(t, raw);
+      if (v > 0) store.benchmarkLog[t.id] = [{ date: date, value: v }];
+    });
+  }
+
+  function renderBenchmarks() {
+    var groups = [];
+    RB.benchmarkTests.forEach(function (t) {
+      var g = groups.filter(function (x) { return x.name === t.group; })[0];
+      if (!g) { g = { name: t.group, items: [] }; groups.push(g); }
+      g.items.push(t);
+    });
+    var html = '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Retest deliberately</span><h2>Benchmarks</h2></div></div>';
+    html += '<p class="bench-intro">Log a fresh result whenever you retest — each keeps a dated history so you can watch it move. Retesting every 3–4 weeks works well.</p>';
+    groups.forEach(function (g) {
+      html += '<h3 class="bench-group">' + esc(g.name) + "</h3><div class=\"bench-list\">";
+      g.items.forEach(function (t) {
+        var arr = store.benchmarkLog[t.id] || [];
+        var latest = arr.length ? arr[arr.length - 1] : null;
+        var d = benchDelta(t, arr);
+        var inputType = t.type === "time" ? "text" : "number";
+        var im = t.type === "time" ? "" : ' inputmode="' + (t.type === "weight" ? "decimal" : "numeric") + '"';
+        var ph = t.type === "time" ? "mm:ss" : (t.type === "weight" ? "lb" : (t.type === "bpm" ? "bpm" : (t.type === "seconds" ? "sec" : "reps")));
+        html += '<article class="bench-item"><div class="bench-top">' +
+          '<div class="bench-name"><strong>' + esc(t.label) + "</strong><small>" + esc(t.hint) + "</small></div>" +
+          '<div class="bench-value">' + (latest ? esc(benchFormat(t, latest.value)) : "—") + "</div></div>";
+        if (d) html += '<div class="bench-sub ' + d.tone + '">' + esc(d.text) + " · " + arr.length + " entries</div>";
+        else if (latest) html += '<div class="bench-sub">Baseline set ' + esc(latest.date.slice(5)) + " · retest to track change</div>";
+        else html += '<div class="bench-sub">Not logged yet</div>';
+        html += '<div class="bench-log"><input type="' + inputType + '"' + im + ' placeholder="' + esc(ph) + '" data-bench-input="' + esc(t.id) + '" aria-label="Log ' + esc(t.label) + '" />' +
+          '<button type="button" class="rest-btn" data-action="bench-log" data-id="' + esc(t.id) + '">Log</button></div>';
+        if (arr.length > 1) {
+          html += '<details class="bench-history"><summary>History (' + arr.length + ")</summary><ul>";
+          arr.slice().reverse().forEach(function (e) { html += "<li><span>" + esc(e.date) + "</span><strong>" + esc(benchFormat(t, e.value)) + "</strong></li>"; });
+          html += "</ul></details>";
+        }
+        html += "</article>";
+      });
+      html += "</div>";
+    });
+    return html + "</section>";
+  }
+
   function renderProgress() {
     var latest = store.checkIns[0];
     var oldest = store.checkIns.length ? store.checkIns[store.checkIns.length - 1] : null;
@@ -1245,12 +1342,7 @@
     else html += weekBars(sess, function (v) { return String(v); }, "sessions", "Sessions completed per week", "Finish workouts to track your consistency.");
     html += "</section>";
 
-    var b = store.benchmarks;
-    html += '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Retest deliberately</span><h2>Benchmarks</h2></div></div>' +
-      '<div class="benchmark-list">' +
-      '<label><span>5K time</span><input placeholder="Not tested" value="' + esc(b.fiveK) + '" data-action="benchmark" data-field="fiveK" /><small>Formal test in week 12</small></label>' +
-      '<label><span>Strict pull-ups</span><input inputmode="numeric" value="' + esc(b.pullups) + '" data-action="benchmark" data-field="pullups" /><small>Stop when form changes</small></label>' +
-      '<label><span>Easy pace</span><input value="' + esc(b.easyPace) + '" data-action="benchmark" data-field="easyPace" /><small>At RPE 3–4</small></label></div></section>';
+    html += renderBenchmarks();
 
     html += '<div class="rule-card"><strong>Nutrition adjustment</strong><p>Lose 0.5–1.0 lb/week with good workouts: hold. Lose more than 1.25 lb/week or see performance decline: add 150–200 calories, mainly carbohydrates. If waist shrinks and strength improves even with slower scale loss, hold.</p></div>';
 
@@ -1476,6 +1568,7 @@
         store.profile = clone(d);
         if (d.weight) ui.checkWeight = String(d.weight);
         syncWeekFromStart();
+        seedBenchmarks();
         save();
         ui.draft = null;
         ui.onboardStep = 0;
@@ -1500,6 +1593,19 @@
         save();
         render(); goTop();
         break;
+      case "bench-log": {
+        var bid = el.getAttribute("data-id");
+        var btest = benchTestById(bid);
+        var binput = document.querySelector('[data-bench-input="' + cssEscape(bid) + '"]');
+        var bval = benchParse(btest, binput ? binput.value : "");
+        if (!bval || bval <= 0) { toast(btest && btest.type === "time" ? "Enter a time like 12:30." : "Enter a valid number."); break; }
+        if (!Array.isArray(store.benchmarkLog[bid])) store.benchmarkLog[bid] = [];
+        store.benchmarkLog[bid].push({ date: todayISO(), value: bval });
+        save();
+        render();
+        toast(btest.label + " logged.");
+        break;
+      }
       case "body-metric":
         ui.bodyMetric = el.getAttribute("data-metric");
         render();
@@ -1598,12 +1704,6 @@
         save();
         break;
       }
-      case "benchmark": {
-        var bfield = el.getAttribute("data-field");
-        store.benchmarks[bfield] = el.value;
-        save();
-        break;
-      }
       case "check-field":
         ui[el.getAttribute("data-field")] = el.value;
         break;
@@ -1685,7 +1785,7 @@
   // ---- boot ----
   function init() {
     load();
-    if (store.profile.onboarded) syncWeekFromStart();
+    if (store.profile.onboarded) { syncWeekFromStart(); seedBenchmarks(); save(); }
     else ui.draft = clone(store.profile);
     var t = todayKey();
     ui.selectedDay = t;
