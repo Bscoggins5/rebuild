@@ -269,6 +269,8 @@ summary { cursor: pointer; font-weight: 850; }
 .ob-dot.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .ob-dot.done { border-color: rgba(137, 232, 168, 0.4); color: var(--accent); }
 .ob-sub { color: var(--muted); font-size: 13px; font-weight: 800; letter-spacing: 0.05em; margin: 26px 0 10px; text-transform: uppercase; }
+.lead-sub { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font-size: 13px; line-height: 1.5; margin: -4px 0 0; padding: 12px 14px; }
+.lead-sub strong { color: var(--ink); }
 .ob-actions { display: flex; gap: 10px; margin-top: 30px; }
 .ob-actions .primary-button { flex: 1; }
 

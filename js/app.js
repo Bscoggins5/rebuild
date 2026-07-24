@@ -150,14 +150,68 @@
       "Strong starting point. An extra set is added to the main lifts and you can run the top of every range.");
   }
 
-  // Starting weight for a lift, derived from the assessment estimates.
-  function seedLoadFor(exId) {
+  // % of 1RM you can hold for N maximal reps, interpolated from RB.repPct.
+  function pctForReps(n) {
+    var t = RB.repPct;
+    if (n <= t[0][0]) return t[0][1];
+    for (var i = 1; i < t.length; i++) {
+      if (n <= t[i][0]) {
+        var a = t[i - 1], b = t[i];
+        return a[1] + ((n - a[0]) / (b[0] - a[0])) * (b[1] - a[1]);
+      }
+    }
+    return t[t.length - 1][1];
+  }
+  // How many reps the prescription leaves in the tank, read from its target
+  // text ("RPE 6–7" -> 3.5 RIR, "2 in reserve" -> 2).
+  function targetRIR(target) {
+    var s = String(target || "");
+    var m = s.match(/RPE\s*(\d+(?:\.\d+)?)(?:\s*[–—-]\s*(\d+(?:\.\d+)?))?/i);
+    if (m) {
+      var lo = parseFloat(m[1]);
+      var hi = m[2] ? parseFloat(m[2]) : lo;
+      return Math.max(0, 10 - (lo + hi) / 2);
+    }
+    var r = s.match(/(\d+)\s*(?:in reserve|shy)/i);
+    if (r) return parseFloat(r[1]);
+    return 3;
+  }
+  // Reps a prescription asks for. Ranges use the TOP number so the derived
+  // load stays conservative (you can always add weight, not un-hurt yourself).
+  function repsForLoad(reps) {
+    var nums = String(reps || "").match(/\d+/g);
+    if (!nums) return 8;
+    var vals = nums.map(Number).filter(function (n) { return n > 0 && n <= 30; });
+    return vals.length ? Math.max.apply(null, vals) : 8;
+  }
+
+  // Working weight for a lift, derived from the entered 1-rep max:
+  //   1RM × %(prescribed reps + reps in reserve) × movement ratio
+  function seedLoadFor(exId, reps, rir) {
     var map = RB.seedMap[exId];
     if (!map) return 0;
     var lifts = (store.profile && store.profile.lifts) || {};
-    var base = toNum(lifts[map.s]);
-    if (!base) return 0;
-    return roundLoad(base * map.f);
+    var oneRM = toNum(lifts[map.s]);
+    if (!oneRM) return 0;
+    var eff = repsForLoad(reps) + (rir === undefined ? 3 : rir);
+    var out = roundLoad(oneRM * pctForReps(eff) * map.f);
+    // Hard safety cap: never prescribe more than 90% of a stated max.
+    if (map.f >= 1 && out > oneRM * 0.9) out = roundLoad(oneRM * 0.9);
+    return out;
+  }
+  function seedLabelFor(seedId) {
+    for (var i = 0; i < RB.liftSeeds.length; i++) if (RB.liftSeeds[i].id === seedId) return RB.liftSeeds[i].label;
+    return seedId;
+  }
+  // Week-1 prescription for a movement, used for the onboarding preview.
+  function week1Rx(exId) {
+    var b = RB.strengthBlocks[0], found = null;
+    ["mon", "thu", "fri"].forEach(function (dk) {
+      var day = b.days[dk];
+      if (!day) return;
+      day.exercises.forEach(function (x) { if (x.id === exId && x.wk[0]) found = x.wk[0]; });
+    });
+    return found;
   }
   function scaleSets(sets, tier) {
     if (sets <= 1) return sets;
@@ -409,14 +463,18 @@
     var info = blockForWeek(week);
     var deload = !!(info && info.deload);
     var last = lastSessionFor(ex.id, week);
-    // Nothing logged yet — start from what they estimated in the assessment.
+    // Nothing logged yet — derive the load from the 1RM in the assessment.
     if (!last) {
-      var seed = seedLoadFor(ex.id);
+      var seed = seedLoadFor(ex.id, ex.reps, targetRIR(ex.target));
       if (!seed) return null;
+      var map = RB.seedMap[ex.id];
+      var oneRM = toNum(((store.profile && store.profile.lifts) || {})[map.s]);
+      var basis = map.f >= 1
+        ? Math.round(100 * (seed / oneRM)) + "% of your " + oneRM + " lb max"
+        : "scaled from your " + seedLabelFor(map.s).toLowerCase() + " max (" + oneRM + " lb)";
       return {
         target: deload ? roundLoad(seed * 0.85) : seed,
-        last: 0, lastWeek: 0, seeded: true, carried: false,
-        basis: "starting point from your assessment estimate",
+        last: 0, lastWeek: 0, seeded: true, carried: false, basis: basis,
       };
     }
     var step = loadStepFor(ex.id);
@@ -604,8 +662,9 @@
 
     if (step === 3) {
       d.lifts = d.lifts || {};
-      html += '<span class="eyebrow">Starting weights</span><h1>Estimate your lifts.</h1>' +
-        '<p class="lead">Roughly what could you lift for <strong>8 clean reps</strong> today? A best guess is fine — the app corrects itself from your first logged session. Leave blank for anything you’ve never done.</p>';
+      html += '<span class="eyebrow">Starting weights</span><h1>Your 1-rep max.</h1>' +
+        '<p class="lead">Enter the most you could lift for a <strong>single rep</strong> on each lift. A best estimate is fine. We work backwards from it — you’ll never be asked to train at your max.</p>' +
+        '<p class="lead-sub">Never tested a max? Use a recent heavy set: about <strong>weight × reps ÷ 30 + weight</strong>. So 225 for 5 ≈ a 260 max. Leave blank for anything you’ve never done.</p>';
       html += '<div class="test-list">';
       RB.liftSeeds.forEach(function (L) {
         html += '<label class="test-row"><div class="test-copy"><strong>' + esc(L.label) + "</strong><small>" + esc(L.hint) + "</small></div>" +
@@ -618,13 +677,18 @@
       var rows = [];
       preview.forEach(function (pi) {
         var map = RB.seedMap[pi[0]];
-        var base = map ? toNum(d.lifts[map.s]) : 0;
-        if (base) rows.push(pi[1] + " — " + roundLoad(base * map.f) + " lb");
+        var oneRM = map ? toNum(d.lifts[map.s]) : 0;
+        var rx1 = week1Rx(pi[0]);
+        if (!oneRM || !rx1) return;
+        var eff = repsForLoad(rx1.reps) + targetRIR(rx1.target);
+        var w = roundLoad(oneRM * pctForReps(eff) * map.f);
+        if (map.f >= 1 && w > oneRM * 0.9) w = roundLoad(oneRM * 0.9);
+        rows.push(pi[1] + " — " + w + " lb × " + rx1.reps + (map.f >= 1 ? " (" + Math.round(100 * w / oneRM) + "% of max)" : ""));
       });
       if (rows.length) {
         html += '<div class="tier-preview"><span class="eyebrow">Week 1 will start you at</span><ul class="seed-list">';
         rows.forEach(function (r) { html += "<li>" + esc(r) + "</li>"; });
-        html += "</ul><small>Everything else starts from your first logged set, then climbs automatically.</small></div>";
+        html += "</ul><small>Working weights, not maxes — calculated from the reps and effort each set calls for. They climb from your logged sets after week 1.</small></div>";
       }
     }
 

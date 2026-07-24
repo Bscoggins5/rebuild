@@ -336,10 +336,19 @@ RB.baselineTests = [
 // Asked at the end of the assessment and used to seed the first session's
 // target load for every lift that maps to one of them.
 RB.liftSeeds = [
-  { id: "squat", label: "Back squat", hint: "Barbell on your back" },
+  { id: "squat", label: "Back squat", hint: "Heaviest single you could manage today" },
   { id: "bench", label: "Bench press", hint: "Barbell, flat bench" },
   { id: "deadlift", label: "Deadlift", hint: "Trap-bar or conventional" },
   { id: "press", label: "Overhead press", hint: "Standing barbell press" },
+];
+
+// Percentage of 1-rep max you can lift for N maximal reps (standard NSCA-style
+// table). Working loads are looked up at reps + reps-in-reserve, so a 6-rep set
+// left 3 shy of failure is loaded like a 9-rep max — not a 6-rep max.
+RB.repPct = [
+  [1, 1.00], [2, 0.955], [3, 0.925], [4, 0.90], [5, 0.875], [6, 0.85],
+  [7, 0.825], [8, 0.80], [9, 0.775], [10, 0.75], [11, 0.725], [12, 0.70],
+  [15, 0.65], [20, 0.60],
 ];
 
 // exercise id -> which estimate it derives from, and the ratio to apply.
