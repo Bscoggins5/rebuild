@@ -47,6 +47,7 @@
     trainMetric: "volume",
     onboardStep: 0,
     draft: null,
+    quickPick: null,
   };
   // One rest timer runs at a time; it lives in whichever exercise card you just
   // completed a set in. restState.exId identifies that card's display element.
@@ -798,8 +799,57 @@
     return html;
   }
 
+  // Optional "what do you want to do today?" picker — a set of standalone
+  // sessions to choose from. Reused on the countdown screen and rest days.
+  function quickPicker(introTop) {
+    var html = '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Optional</span><h2>What do you want to do today?</h2></div></div>';
+    if (introTop) html += '<p class="quick-intro">' + esc(introTop) + "</p>";
+    html += '<div class="quick-list">';
+    RB.quickSessions.forEach(function (q) {
+      var sel = ui.quickPick === q.id;
+      html += '<article class="quick-card' + (sel ? " selected" : "") + '" data-action="pick-quick" data-id="' + esc(q.id) + '" role="button" tabindex="0" aria-expanded="' + (sel ? "true" : "false") + '">' +
+        '<div class="qc-head"><div><h3>' + esc(q.name) + "</h3><p>" + esc(q.tagline) + "</p></div><span class=\"qc-dur\">" + esc(q.duration) + "</span></div>";
+      if (sel) {
+        html += '<ul class="qc-items">';
+        q.items.forEach(function (x) { html += "<li>" + esc(x) + "</li>"; });
+        html += "</ul>";
+      }
+      html += "</article>";
+    });
+    return html + "</div></section>";
+  }
+
+  // Countdown screen shown on Today until the program's start date arrives.
+  function renderCountdown(prog) {
+    var p = store.profile;
+    var progName = programById(p.program).name;
+    var tg = nutritionTargets(p);
+    var days = prog.daysUntil;
+    var startStr = new Date(p.startDate + "T00:00:00").toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+
+    var html = '<section class="screen" aria-labelledby="today-heading">';
+    html += '<span class="eyebrow">Countdown to game time</span>';
+    html += '<div class="countdown-hero"><div class="cd-num">' + days + "</div>" +
+      '<div class="cd-copy"><strong id="today-heading">' + (days === 1 ? "day" : "days") + " to go</strong>" +
+      "<span>Your " + esc(progName) + " starts " + esc(startStr) + ".</span></div></div>";
+    html += '<p class="lead">' + (days === 1 ? "Tomorrow it begins." : "Not on the clock yet") +
+      " — but you don't have to sit still. Pick something to move today, or take a rest." +
+      (tg ? " You can start eating on your " + tg.calories.toLocaleString() + " kcal plan whenever you're ready." : "") + "</p>";
+
+    html += quickPicker(null);
+
+    html += '<details class="install-note"><summary>Put REBUILD on your iPhone Home Screen</summary><p>Open this app in Safari, tap Share, choose <strong>Add to Home Screen</strong>, then open it like any other app. It works offline afterward.</p></details>';
+    html += "</section>";
+    return html;
+  }
+
   // ---- screens ----
   function renderToday() {
+    // Before the chosen start date, show a countdown instead of pretending the
+    // program is already under way.
+    var prog = programProgress(store.profile);
+    if (prog && prog.status === "upcoming") return renderCountdown(prog);
+
     var week = store.currentWeek;
     var today = todayKey();
     var session = sessionFor(today, week);
@@ -1593,6 +1643,12 @@
         save();
         render(); goTop();
         break;
+      case "pick-quick": {
+        var qid = el.getAttribute("data-id");
+        ui.quickPick = ui.quickPick === qid ? null : qid; // tap again to collapse
+        render();
+        break;
+      }
       case "bench-log": {
         var bid = el.getAttribute("data-id");
         var btest = benchTestById(bid);

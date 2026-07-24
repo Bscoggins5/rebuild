@@ -413,6 +413,78 @@ RB.benchmarkTests = [
     hint: "BPM first thing in the morning, still in bed." },
 ];
 
+// ---- Optional "pick your own" sessions ----
+// Shown on the Today tab before the program's start date (and any rest day):
+// self-contained standalone workouts to do while counting down, or as a swap.
+RB.quickSessions = [
+  {
+    id: "fullbody", name: "Full-body strength", kind: "lift",
+    tagline: "A balanced lift to wake up every movement pattern", duration: "40–45 min",
+    items: [
+      "Goblet or back squat — 3 × 10",
+      "Push-up or DB bench press — 3 × 10",
+      "One-arm DB row — 3 × 10 / side",
+      "DB Romanian deadlift — 3 × 10",
+      "Farmer carry — 3 × 30 m",
+      "Front plank — 3 × 30–45 sec",
+    ],
+  },
+  {
+    id: "hybrid", name: "Hybrid session", kind: "hybrid",
+    tagline: "Lift a little, then a short conditioning finish", duration: "35–40 min",
+    items: [
+      "Goblet squat — 4 × 6",
+      "DB bench press — 3 × 8",
+      "Chest-supported row — 3 × 10",
+      "10-min easy bike or row",
+      "5 rounds: 10 kettlebell swings + 200 m easy run",
+    ],
+  },
+  {
+    id: "run", name: "Easy run or ride", kind: "cardio",
+    tagline: "Zone-2 aerobic base at a conversational pace", duration: "25–35 min",
+    items: [
+      "5-min brisk walk to warm up",
+      "20–30 min easy run, bike, or row at RPE 3–4",
+      "Keep it easy enough to talk in full sentences",
+      "5-min cooldown walk",
+    ],
+  },
+  {
+    id: "mobility", name: "Mobility & stretch", kind: "mobility",
+    tagline: "Loosen the hips, shoulders and spine", duration: "15–20 min",
+    items: [
+      "World's greatest stretch — 5 / side",
+      "Half-kneeling hip-flexor stretch — 45 sec / side",
+      "Open-book thoracic rotation — 8 / side",
+      "90/90 hip switches — 10 / side",
+      "Cat-cow — 10 slow reps",
+      "Couch stretch — 60 sec / side",
+    ],
+  },
+  {
+    id: "core", name: "Core & carries", kind: "core",
+    tagline: "Short, low-impact trunk and grip work", duration: "15 min",
+    items: [
+      "Dead bug — 3 × 8 / side",
+      "Side plank — 3 × 30 sec / side",
+      "Bird dog — 3 × 8 / side",
+      "Suitcase carry — 3 × 30 m / side",
+      "Hollow hold — 3 × 20 sec",
+    ],
+  },
+  {
+    id: "rest", name: "Rest day", kind: "rest",
+    tagline: "Recover, hydrate, and arrive fresh", duration: "Off",
+    items: [
+      "Take it easy — nothing structured today",
+      "A 10–20 min walk keeps you loose",
+      "Hydrate and aim for a solid night's sleep",
+      "Show up rested when the program starts",
+    ],
+  },
+];
+
 // ---- Goals (drive the calorie/protein calculation) ----
 RB.goals = [
   { id: "lose", label: "Lose fat", desc: "Drop body fat while holding onto strength.", calAdj: -0.15, proteinPerKg: 2.0 },
