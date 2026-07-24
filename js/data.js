@@ -591,6 +591,115 @@ RB.mealNames = {
   },
 };
 
+// ---- Equipment swaps ----
+// Every lifting movement maps to a pattern; each pattern has a pool of
+// same-muscle-group alternatives for different equipment. A swap keeps the
+// slot's sets/reps/tempo and logging history — only the movement changes.
+RB.exercisePattern = {
+  "back-squat": "squat", "front-squat": "squat", "back-squat-heavy": "squat",
+  "db-bench": "hpush", "bb-bench": "hpush", "incline-db": "hpush", "low-incline-db": "hpush",
+  "bb-bench-heavy": "hpush", "incline-db-heavy": "hpush", "weighted-dip": "hpush",
+  "cs-row": "hpull", "one-arm-row": "hpull", "seal-row": "hpull", "tbar-row": "hpull",
+  "pendlay-row": "hpull", "cs-row-heavy": "hpull",
+  "reverse-lunge": "lunge", "rfess": "lunge", "walking-lunge": "lunge", "bulgarian": "lunge",
+  "heavy-reverse-lunge": "lunge", "step-up": "lunge",
+  "seated-leg-curl": "hamstring", "lying-leg-curl": "hamstring", "slow-leg-curl": "hamstring",
+  "trap-deadlift": "hinge", "rdl": "hinge", "deadlift-heavy": "hinge", "back-ext": "hinge",
+  "ohp": "vpush", "ohp-heavy": "vpush", "push-press": "vpush", "arnold-press": "vpush", "landmine-press": "vpush",
+  "pullups": "vpull", "pulldown": "vpull", "weighted-pullup": "vpull", "weighted-pullup-heavy": "vpull", "chinup": "vpull",
+  "hip-thrust": "hipthrust", "hip-thrust-heavy": "hipthrust",
+  "suitcase-carry": "carry", "farmer-carry": "carry", "front-carry": "carry",
+  "sandbag-carry": "carry", "suitcase-heavy": "carry", "farmer-heavy": "carry",
+  "side-plank": "core", "pallof": "core",
+  "arm-giant": "arms", "arm-superset": "arms", "arm-giant-peak": "arms", "face-pull": "arms",
+  "med-ball-slam": "power", "rot-med-ball": "power", "med-ball-slam-peak": "power",
+};
+
+RB.altPool = {
+  squat: [
+    { id: "goblet-squat", name: "Goblet squat", equip: "Dumbbell / kettlebell" },
+    { id: "db-squat", name: "Dumbbell squat", equip: "Dumbbells" },
+    { id: "split-squat-sq", name: "Split squat", equip: "Bodyweight / DB" },
+    { id: "leg-press", name: "Leg press", equip: "Machine" },
+    { id: "bw-squat", name: "Bodyweight squat", equip: "No equipment" },
+  ],
+  hpush: [
+    { id: "pushup", name: "Push-up", equip: "Bodyweight" },
+    { id: "db-floor-press", name: "DB floor press", equip: "Dumbbells" },
+    { id: "machine-press", name: "Machine chest press", equip: "Machine" },
+    { id: "band-press", name: "Band chest press", equip: "Band" },
+    { id: "dip-hp", name: "Dip", equip: "Bodyweight / bars" },
+  ],
+  hpull: [
+    { id: "db-row-alt", name: "One-arm DB row", equip: "Dumbbell" },
+    { id: "inverted-row", name: "Inverted row", equip: "Bodyweight / bar" },
+    { id: "band-row", name: "Band row", equip: "Band" },
+    { id: "machine-row", name: "Machine / cable row", equip: "Machine" },
+  ],
+  lunge: [
+    { id: "reverse-lunge-alt", name: "Reverse lunge", equip: "Bodyweight / DB" },
+    { id: "split-squat-ln", name: "Split squat", equip: "Bodyweight / DB" },
+    { id: "step-up-alt", name: "Step-up", equip: "Bodyweight / DB" },
+    { id: "bw-lunge", name: "Walking lunge", equip: "Bodyweight" },
+  ],
+  hamstring: [
+    { id: "nordic", name: "Nordic curl", equip: "Bodyweight" },
+    { id: "band-curl", name: "Band leg curl", equip: "Band" },
+    { id: "db-rdl-ham", name: "Dumbbell RDL", equip: "Dumbbells" },
+    { id: "back-ext-ham", name: "Back extension", equip: "Bodyweight" },
+    { id: "slider-curl", name: "Slider / towel curl", equip: "Bodyweight" },
+  ],
+  hinge: [
+    { id: "db-rdl", name: "Dumbbell RDL", equip: "Dumbbells" },
+    { id: "kb-deadlift", name: "Kettlebell deadlift", equip: "Kettlebell" },
+    { id: "single-leg-rdl", name: "Single-leg RDL", equip: "Bodyweight / DB" },
+    { id: "back-ext-h", name: "Back extension", equip: "Bodyweight" },
+    { id: "good-morning", name: "Good morning", equip: "Barbell / band" },
+  ],
+  vpush: [
+    { id: "db-press-v", name: "Standing DB press", equip: "Dumbbells" },
+    { id: "seated-db-press", name: "Seated DB press", equip: "Dumbbells" },
+    { id: "pike-pushup", name: "Pike push-up", equip: "Bodyweight" },
+    { id: "landmine-press-v", name: "Landmine press", equip: "Barbell" },
+    { id: "band-oh-press", name: "Band overhead press", equip: "Band" },
+  ],
+  vpull: [
+    { id: "lat-pulldown", name: "Lat pulldown", equip: "Machine" },
+    { id: "band-pulldown", name: "Band pulldown", equip: "Band" },
+    { id: "inverted-row-v", name: "Inverted row", equip: "Bodyweight / bar" },
+    { id: "assisted-pullup", name: "Band-assisted pull-up", equip: "Band + bar" },
+  ],
+  hipthrust: [
+    { id: "sl-hip-thrust", name: "Single-leg hip thrust", equip: "Bodyweight" },
+    { id: "glute-bridge", name: "Glute bridge", equip: "Bodyweight / DB" },
+    { id: "kb-swing-ht", name: "Kettlebell swing", equip: "Kettlebell" },
+    { id: "back-ext-ht", name: "Back extension", equip: "Bodyweight" },
+  ],
+  carry: [
+    { id: "db-carry", name: "Dumbbell / KB carry", equip: "Dumbbells" },
+    { id: "backpack-carry", name: "Loaded backpack carry", equip: "Household" },
+    { id: "sandbag-carry-alt", name: "Sandbag carry", equip: "Sandbag" },
+    { id: "plate-carry", name: "Plate pinch carry", equip: "Plates" },
+  ],
+  core: [
+    { id: "plank-c", name: "Front plank", equip: "Bodyweight" },
+    { id: "dead-bug", name: "Dead bug", equip: "Bodyweight" },
+    { id: "bird-dog", name: "Bird dog", equip: "Bodyweight" },
+    { id: "band-pallof", name: "Band Pallof press", equip: "Band" },
+    { id: "hollow-hold", name: "Hollow hold", equip: "Bodyweight" },
+  ],
+  arms: [
+    { id: "band-arms", name: "Band curls + press-downs", equip: "Band" },
+    { id: "db-arms", name: "DB curls + overhead triceps", equip: "Dumbbells" },
+    { id: "bw-arms", name: "Close-grip push-ups + chin-ups", equip: "Bodyweight" },
+  ],
+  power: [
+    { id: "broad-jump", name: "Broad jump", equip: "Bodyweight" },
+    { id: "kb-swing-p", name: "Kettlebell swing", equip: "Kettlebell" },
+    { id: "box-jump", name: "Box jump", equip: "Box" },
+  ],
+};
+
 // ---- Automatic load progression ----
 // How much weight to add when last week's work was completed at RPE ≤ 8.
 // Bigger jumps on big lower-body/hinge patterns, small jumps on isolation.

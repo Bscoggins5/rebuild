@@ -14,6 +14,7 @@
     checkIns: [],
     benchmarks: { fiveK: "", pullups: "10", easyPace: "10:00" },
     benchmarkLog: {},
+    exerciseSwaps: {},
     readiness: { date: "", sleep: "7", soreness: "low" },
     profile: {
       onboarded: false,
@@ -48,6 +49,7 @@
     onboardStep: 0,
     draft: null,
     quickPick: null,
+    swapOpen: null,
   };
   // One rest timer runs at a time; it lives in whichever exercise card you just
   // completed a set in. restState.exId identifies that card's display element.
@@ -83,7 +85,7 @@
     store.readiness = Object.assign(clone(initialState.readiness), store.readiness || {});
     store.profile = Object.assign(clone(initialState.profile), store.profile || {});
     if (!Array.isArray(store.checkIns)) store.checkIns = [];
-    ["workoutLogs", "runLogs", "completedWorkouts", "completedMeals", "shoppingChecks", "benchmarkLog"].forEach(function (k) {
+    ["workoutLogs", "runLogs", "completedWorkouts", "completedMeals", "shoppingChecks", "benchmarkLog", "exerciseSwaps"].forEach(function (k) {
       if (!store[k] || typeof store[k] !== "object") store[k] = {};
     });
     // Migrate the old free-text benchmarks into the dated benchmark log once.
@@ -462,6 +464,19 @@
       if (bestWeek > 0) return { week: bestWeek, top: top, rpe: maxRpe, viaId: id };
     }
     return null;
+  }
+
+  // Equipment swap for a movement: its pattern's alternative pool, plus the
+  // display name (the chosen alternative, or the original recommendation).
+  function swapInfo(exId, exName) {
+    var pattern = RB.exercisePattern[exId];
+    var pool = pattern ? (RB.altPool[pattern] || []) : [];
+    var chosen = store.exerciseSwaps[exId];
+    var name = exName, swapped = false;
+    if (chosen) {
+      for (var i = 0; i < pool.length; i++) if (pool[i].id === chosen) { name = pool[i].name; swapped = true; break; }
+    }
+    return { pool: pool, hasAlts: pool.length > 0, displayName: name, swapped: swapped };
   }
 
   // Turn that history into a concrete load target for this week:
@@ -940,15 +955,31 @@
       session.exercises.forEach(function (ex) {
         var prescribedSets = ex.sets;
         var restSec = restToSeconds(ex.rest);
-        var sug = suggestLoad(ex, week);
+        var swap = swapInfo(ex.id, ex.name);
+        // A swapped movement may be a different implement (or bodyweight), so
+        // the barbell-derived target no longer applies — hide it, keep logging.
+        var sug = swap.swapped ? null : suggestLoad(ex, week);
         var effort = sug ? effortPart(ex.target) : ex.target;
         var groupTag = ex.group ? '<span class="group-tag">' + esc(ex.group) + "</span>" : "";
-        html += '<article class="exercise-card"><div class="exercise-title"><div><h3>' + groupTag + esc(ex.name) + "</h3><p>" + esc(ex.cue) + "</p></div><span>" + prescribedSets + " × " + esc(ex.reps) + "</span></div>";
+        var nameHtml = groupTag + esc(swap.displayName) + (swap.swapped ? ' <em class="swapped-tag">swap</em>' : "");
+        var swapBtn = swap.hasAlts ? '<button class="swap-btn" type="button" data-action="swap-toggle" data-ex="' + esc(ex.id) + '" aria-label="Swap ' + esc(swap.displayName) + ' for different equipment" title="Swap equipment">⇄</button>' : "";
+        html += '<article class="exercise-card"><div class="exercise-title"><div><h3>' + nameHtml + "</h3><p>" + esc(ex.cue) + "</p></div>" +
+          '<div class="ex-actions"><span class="ex-sr">' + prescribedSets + " × " + esc(ex.reps) + "</span>" + swapBtn + "</div></div>";
         html += '<div class="rx-line">';
         if (ex.tempo && ex.tempo !== "—") html += "<span>Tempo <strong>" + esc(ex.tempo) + "</strong></span>";
         if (ex.rest && ex.rest !== "—") html += "<span>Rest <strong>" + esc(ex.rest) + "</strong></span>";
         if (effort) html += '<span class="rx-target"><strong>' + esc(effort) + "</strong></span>";
         html += "</div>";
+        if (ui.swapOpen === ex.id && swap.hasAlts) {
+          html += '<div class="swap-list"><div class="swap-hint">Same muscle group, different equipment — your sets, reps and logged progress stay the same.</div>';
+          var isDefault = !store.exerciseSwaps[ex.id];
+          html += '<button type="button" class="swap-opt' + (isDefault ? " active" : "") + '" data-action="swap-choose" data-ex="' + esc(ex.id) + '" data-alt="default"><strong>' + esc(ex.name) + "</strong><small>Recommended</small></button>";
+          swap.pool.forEach(function (alt) {
+            var on = store.exerciseSwaps[ex.id] === alt.id;
+            html += '<button type="button" class="swap-opt' + (on ? " active" : "") + '" data-action="swap-choose" data-ex="' + esc(ex.id) + '" data-alt="' + esc(alt.id) + '"><strong>' + esc(alt.name) + "</strong><small>" + esc(alt.equip) + "</small></button>";
+          });
+          html += "</div>";
+        }
         if (sug) {
           html += '<div class="load-suggest"><span class="ls-label">Target load</span>' +
             '<strong class="ls-value">' + esc(fmtLb(sug.target)) + "</strong>" +
@@ -1647,6 +1678,23 @@
         var qid = el.getAttribute("data-id");
         ui.quickPick = ui.quickPick === qid ? null : qid; // tap again to collapse
         render();
+        break;
+      }
+      case "swap-toggle": {
+        var sxid = el.getAttribute("data-ex");
+        ui.swapOpen = ui.swapOpen === sxid ? null : sxid;
+        render();
+        break;
+      }
+      case "swap-choose": {
+        var cxid = el.getAttribute("data-ex");
+        var altId = el.getAttribute("data-alt");
+        if (altId === "default") delete store.exerciseSwaps[cxid];
+        else store.exerciseSwaps[cxid] = altId;
+        ui.swapOpen = null;
+        save();
+        render();
+        toast(altId === "default" ? "Back to the recommended movement." : "Swapped.");
         break;
       }
       case "bench-log": {
