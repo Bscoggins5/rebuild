@@ -1156,14 +1156,27 @@
 
   function renderProgress() {
     var latest = store.checkIns[0];
-    var weight = latest ? latest.weight : 200;
-    var weightProgress = Math.max(0, Math.min(100, ((200 - weight) / 15) * 100));
+    var oldest = store.checkIns.length ? store.checkIns[store.checkIns.length - 1] : null;
+    var profWeight = toNum(store.profile.weight);
+    var goal = toNum(store.profile.goalWeight);
+    // Current weight comes from the latest check-in, and before any check-in
+    // exists, from the weight entered during onboarding (not a hardcoded 200).
+    var weight = latest ? latest.weight : profWeight;
+    var hasWeight = weight > 0;
+    // Baseline is the onboarding weight — the program's day-zero. Falls back to
+    // the earliest check-in only if onboarding weight is missing. Progress works
+    // for losing or gaining.
+    var startWeight = profWeight || (oldest ? oldest.weight : weight);
+    var weightProgress = 0;
+    if (hasWeight && goal && Math.abs(startWeight - goal) > 0.01) {
+      weightProgress = Math.max(0, Math.min(100, ((startWeight - weight) / (startWeight - goal)) * 100));
+    }
 
     var html = '<section class="screen" aria-labelledby="progress-heading">';
     html += '<div class="screen-title-row"><div><span class="eyebrow">Weekly evidence</span><h1 id="progress-heading">Progress</h1></div><button class="text-button" type="button" data-action="export">Export backup</button></div>';
 
-    html += '<div class="progress-hero"><div><span>Current weight</span><strong>' + weight.toFixed(1) + ' lb</strong><small>Goal: 185 lb</small></div>' +
-      '<div class="goal-ring" style="--progress:' + weightProgress + '%"><span>' + Math.round(weightProgress) + "%</span></div></div>";
+    html += '<div class="progress-hero"><div><span>Current weight</span><strong>' + (hasWeight ? weight.toFixed(1) + " lb" : "—") + "</strong><small>" + (goal ? "Goal: " + goal + " lb" : "No goal set") + "</small></div>" +
+      '<div class="goal-ring" style="--progress:' + weightProgress + '%"><span>' + (goal && hasWeight ? Math.round(weightProgress) + "%" : "—") + "</span></div></div>";
 
     // ---- KPI stat tiles ----
     var vol = weeklyVolume(), miles = weeklyMiles(), sess = weeklySessions();
@@ -1176,7 +1189,9 @@
     var latestWaist = waistSeries.length ? waistSeries[waistSeries.length - 1].value : null;
 
     html += '<div class="stat-grid">';
-    html += statTile("Weight", latest ? weight.toFixed(1) + ' <span class="stat-unit">lb</span>' : "—", deltaSub(seriesDelta("weight"), "lb", true));
+    html += statTile("Weight", hasWeight ? weight.toFixed(1) + ' <span class="stat-unit">lb</span>' : "—",
+      store.checkIns.length >= 2 ? deltaSub(seriesDelta("weight"), "lb", true)
+        : { text: latest ? "logged " + latest.date.slice(5) : "starting weight", tone: "" });
     html += statTile("Waist", latestWaist !== null ? latestWaist.toFixed(1) + ' <span class="stat-unit">in</span>' : "—", latestWaist !== null ? deltaSub(seriesDelta("waist"), "in", true) : { text: "Log waist to track", tone: "" });
     html += statTile("Sessions done", String(totalSessions), { text: adherence + "% of wk " + wk + " plan", tone: totalSessions > 0 ? "good" : "" });
     html += statTile("Miles run", totalMiles.toFixed(1) + ' <span class="stat-unit">mi</span>', { text: "this week " + (miles[wk] || 0).toFixed(1) + " mi", tone: "" });
@@ -1667,7 +1682,10 @@
       ui.sleep = store.readiness.sleep || ui.sleep;
       ui.soreness = store.readiness.soreness || ui.soreness;
     }
+    // Seed the check-in weight field from the last check-in, or failing that
+    // from the weight entered at onboarding — never a hardcoded default.
     if (store.checkIns[0]) ui.checkWeight = String(store.checkIns[0].weight);
+    else if (toNum(store.profile.weight)) ui.checkWeight = String(store.profile.weight);
 
     render();
 
