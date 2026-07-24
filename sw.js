@@ -1,5 +1,5 @@
 /* REBUILD service worker — network-first so updates are never stuck behind a stale cache. */
-const CACHE_NAME = "rebuild-standalone-v2";
+const CACHE_NAME = "rebuild-standalone-v3";
 const CORE = [
   "./",
   "./index.html",
@@ -37,7 +37,10 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET" || new URL(request.url).origin !== self.location.origin) return;
   event.respondWith(
-    fetch(request)
+    // `cache: "no-store"` forces a real network trip instead of letting the
+    // browser's HTTP cache hand back a stale file — so a reload always gets the
+    // latest deploy when online, and falls back to the cache only when offline.
+    fetch(request, { cache: "no-store" })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => undefined);
