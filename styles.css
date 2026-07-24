@@ -301,6 +301,9 @@ summary { cursor: pointer; font-weight: 850; }
 .test-input { align-items: center; display: flex; flex: 0 0 auto; gap: 7px; }
 .test-input input { margin: 0; min-height: 44px; text-align: center; width: 88px; }
 .test-input span { color: var(--dim); font-size: 12px; font-weight: 700; min-width: 34px; }
+.time-input { gap: 4px; }
+.time-input input { width: 62px; }
+.time-input .time-colon { color: var(--muted); font-size: 20px; font-weight: 800; min-width: 0; padding-bottom: 2px; }
 .seed-list { color: var(--muted); font-size: 14px; margin: 8px 0 10px; padding-left: 18px; }
 .seed-list li { margin-bottom: 3px; }
 .tier-preview { background: rgba(137, 232, 168, 0.07); border: 1px solid rgba(137, 232, 168, 0.24); border-radius: 16px; margin-top: 24px; padding: 18px; }

@@ -572,10 +572,27 @@
         '<p class="lead">Standard field tests. Do them rested and spread over a day or two — don’t grind all five back to back. Skip any you can’t do; we score what you complete.</p>';
       html += '<div class="test-list">';
       RB.baselineTests.forEach(function (t) {
-        html += '<label class="test-row"><div class="test-copy"><strong>' + esc(t.label) + "</strong><small>" + esc(t.hint) + "</small></div>" +
-          '<div class="test-input"><input type="' + (t.time ? "text" : "number") + '" inputmode="' + (t.time ? "numeric" : "decimal") +
-          '" placeholder="' + esc(t.placeholder) + '" value="' + esc(d[t.id] || "") + '" data-action="ob-field" data-field="' + t.id + '" />' +
-          "<span>" + esc(t.unit) + "</span></div></label>";
+        var copy = '<div class="test-copy"><strong>' + esc(t.label) + "</strong><small>" + esc(t.hint) + "</small></div>";
+        if (t.time) {
+          // Two numeric boxes rather than one "mm:ss" field — a phone's numeric
+          // keypad has no colon key, so a single field is untypeable on iOS.
+          var secs = parseTime(d[t.id]);
+          var mm = secs ? String(Math.floor(secs / 60)) : "";
+          var ss = secs ? String(secs % 60).padStart(2, "0") : "";
+          html += '<div class="test-row">' + copy +
+            '<div class="test-input time-input" data-time-for="' + t.id + '">' +
+            '<input type="number" inputmode="numeric" min="0" placeholder="13" value="' + esc(mm) +
+            '" aria-label="' + esc(t.label) + ' minutes" data-action="ob-time" data-field="' + t.id + '" data-part="min" />' +
+            '<span class="time-colon">:</span>' +
+            '<input type="number" inputmode="numeric" min="0" max="59" placeholder="30" value="' + esc(ss) +
+            '" aria-label="' + esc(t.label) + ' seconds" data-action="ob-time" data-field="' + t.id + '" data-part="sec" />' +
+            "</div></div>";
+        } else {
+          html += '<label class="test-row">' + copy +
+            '<div class="test-input"><input type="number" inputmode="decimal" placeholder="' + esc(t.placeholder) +
+            '" value="' + esc(d[t.id] || "") + '" data-action="ob-field" data-field="' + t.id + '" />' +
+            "<span>" + esc(t.unit) + "</span></div></label>";
+        }
       });
       html += "</div>";
       var t2 = fitnessTier(d);
@@ -1512,6 +1529,26 @@
         }
         if (e.type === "change") render();
         break;
+      case "ob-time": {
+        // Recombine the minutes + seconds boxes into the canonical "m:ss".
+        var tf = el.getAttribute("data-field");
+        var wrap = el.closest("[data-time-for]");
+        if (!wrap || !ui.draft) break;
+        var miEl = wrap.querySelector('[data-part="min"]');
+        var seEl = wrap.querySelector('[data-part="sec"]');
+        var mi = miEl ? String(miEl.value).trim() : "";
+        var se = seEl ? String(seEl.value).trim() : "";
+        if (mi === "" && se === "") {
+          ui.draft[tf] = "";
+        } else {
+          var mnum = parseInt(mi, 10); if (!isFinite(mnum) || mnum < 0) mnum = 0;
+          var snum = parseInt(se, 10); if (!isFinite(snum) || snum < 0) snum = 0;
+          if (snum > 59) { mnum += Math.floor(snum / 60); snum = snum % 60; } // 13:75 -> 14:15
+          ui.draft[tf] = mnum + ":" + String(snum).padStart(2, "0");
+        }
+        if (e.type === "change") render();
+        break;
+      }
       case "set-week":
         store.currentWeek = Number(el.value);
         save();
