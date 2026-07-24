@@ -14,10 +14,20 @@
     checkIns: [],
     benchmarks: { fiveK: "", pullups: "10", easyPace: "10:00" },
     readiness: { date: "", sleep: "7", soreness: "low" },
+    profile: {
+      onboarded: false,
+      program: "hybrid",
+      startDate: "",
+      age: "", sex: "male", heightIn: "", weight: "", goalWeight: "",
+      activity: "light",
+      pushups: "", pullups: "", squats: "", runMiles: "",
+      goal: "lose",
+      diet: "omnivore",
+    },
   };
 
-  var tabLabels = { today: "Today", workouts: "Workouts", nutrition: "Nutrition", progress: "Progress" };
-  var tabIcons = { today: "●", workouts: "▰", nutrition: "◆", progress: "↗" };
+  var tabLabels = { home: "Home", today: "Today", workouts: "Workouts", nutrition: "Nutrition", progress: "Progress" };
+  var tabIcons = { home: "⌂", today: "●", workouts: "▰", nutrition: "◆", progress: "↗" };
 
   // ---- persisted + ephemeral state ----
   var store = clone(initialState);
@@ -33,6 +43,8 @@
     checkSleep: "6.8",
     bodyMetric: "weight",
     trainMetric: "volume",
+    onboardStep: 0,
+    draft: null,
   };
   // One rest timer runs at a time; it lives in whichever exercise card you just
   // completed a set in. restState.exId identifies that card's display element.
@@ -66,12 +78,186 @@
     // field can never render "undefined" or throw later.
     store.benchmarks = Object.assign(clone(initialState.benchmarks), store.benchmarks || {});
     store.readiness = Object.assign(clone(initialState.readiness), store.readiness || {});
+    store.profile = Object.assign(clone(initialState.profile), store.profile || {});
     if (!Array.isArray(store.checkIns)) store.checkIns = [];
     ["workoutLogs", "runLogs", "completedWorkouts", "completedMeals", "shoppingChecks"].forEach(function (k) {
       if (!store[k] || typeof store[k] !== "object") store[k] = {};
     });
     var w = Number(store.currentWeek);
     store.currentWeek = w >= 1 && w <= 12 ? Math.floor(w) : 1;
+  }
+
+  // ================= personalization engine =================
+  function programById(id) {
+    for (var i = 0; i < RB.programs.length; i++) if (RB.programs[i].id === id) return RB.programs[i];
+    return RB.programs[0];
+  }
+  function goalById(id) {
+    for (var i = 0; i < RB.goals.length; i++) if (RB.goals[i].id === id) return RB.goals[i];
+    return RB.goals[0];
+  }
+  function dietById(id) {
+    for (var i = 0; i < RB.diets.length; i++) if (RB.diets[i].id === id) return RB.diets[i];
+    return RB.diets[0];
+  }
+
+  // Baseline assessment -> a 0–12 capability score -> a training tier that
+  // scales how much work the program prescribes.
+  function fitnessScore(p) {
+    var s = 0;
+    var pu = toNum(p.pushups); s += pu >= 35 ? 3 : pu >= 20 ? 2 : pu >= 10 ? 1 : 0;
+    var pl = toNum(p.pullups); s += pl >= 10 ? 3 : pl >= 5 ? 2 : pl >= 1 ? 1 : 0;
+    var sq = toNum(p.squats); s += sq >= 60 ? 3 : sq >= 40 ? 2 : sq >= 20 ? 1 : 0;
+    var rm = toNum(p.runMiles); s += rm >= 5 ? 3 : rm >= 3 ? 2 : rm >= 1 ? 1 : 0;
+    return s;
+  }
+  function fitnessTier(p) {
+    var s = fitnessScore(p);
+    if (s <= 3) return { n: 1, score: s, name: "Restart", setScale: 0.6, runPct: 70,
+      note: "Your assessment says start light. Sets are trimmed, power work is removed, and runs are run/walk — aim for about 70% of the listed time. Build the habit first; the loads climb on their own." };
+    if (s <= 7) return { n: 2, score: s, name: "Rebuild", setScale: 0.8, runPct: 85,
+      note: "You have a base but it needs re-lighting. Volume is slightly reduced and runs target about 85% of the listed time for the first block." };
+    if (s <= 11) return { n: 3, score: s, name: "Standard", setScale: 1, runPct: 100,
+      note: "You're fit enough for the program as written. Run the sets, reps and times exactly as prescribed." };
+    return { n: 4, score: s, name: "Advanced", setScale: 1.15, runPct: 110,
+      note: "Strong starting point. An extra set is added to the main lifts and you can run the top of every range." };
+  }
+  function scaleSets(sets, tier) {
+    if (sets <= 1) return sets;
+    return Math.max(2, Math.min(6, Math.round(sets * tier.setScale)));
+  }
+
+  // Mifflin–St Jeor -> TDEE -> goal-adjusted calories and macros.
+  function nutritionTargets(p) {
+    var lb = toNum(p.weight), inch = toNum(p.heightIn), age = toNum(p.age) || 30;
+    if (!lb || !inch) return null;
+    var kg = lb * 0.45359, cm = inch * 2.54;
+    var bmr = p.sex === "female" ? (10 * kg + 6.25 * cm - 5 * age - 161) : (10 * kg + 6.25 * cm - 5 * age + 5);
+    var prog = programById(p.program);
+    var actAdj = { sedentary: -0.10, light: 0, active: 0.10, veryactive: 0.18 }[p.activity] || 0;
+    var tdee = bmr * (prog.activityFactor * (1 + actAdj));
+    var goal = goalById(p.goal);
+    var cal = tdee * (1 + goal.calAdj);
+    var protein = kg * goal.proteinPerKg;
+    var fat = kg * 0.9;
+    var carbs = Math.max(80, (cal - protein * 4 - fat * 9) / 4);
+    return {
+      bmr: Math.round(bmr), tdee: Math.round(tdee),
+      calories: Math.round(cal / 10) * 10,
+      protein: Math.round(protein), fat: Math.round(fat), carbs: Math.round(carbs),
+      fiber: Math.max(25, Math.round(cal / 1000 * 14)),
+    };
+  }
+
+  // Where the user is in their program, from the chosen start date.
+  function programProgress(p) {
+    if (!p.startDate) return null;
+    var start = new Date(p.startDate + "T00:00:00");
+    if (isNaN(start.getTime())) return null;
+    var now = new Date(); now.setHours(0, 0, 0, 0);
+    var days = Math.floor((now - start) / 86400000);
+    var total = programById(p.program).weeks;
+    if (days < 0) return { status: "upcoming", daysUntil: -days, week: 1, total: total };
+    var wk = Math.floor(days / 7) + 1;
+    if (wk > total) return { status: "complete", week: total, total: total, days: days };
+    return { status: "active", week: wk, total: total, days: days, dayOfWeek: (days % 7) + 1 };
+  }
+
+  // Keep the active week in step with the calendar so opening the app in
+  // week 3 lands on week 3. Browsing other weeks still works; it re-syncs
+  // on the next load.
+  function syncWeekFromStart() {
+    var pr = programProgress(store.profile);
+    if (!pr) return;
+    if (pr.status === "active") store.currentWeek = pr.week;
+    else if (pr.status === "upcoming") store.currentWeek = 1;
+  }
+
+  // ---- meal adaptation: portion scaling + dietary swaps ----
+  function scaleAmounts(text, f) {
+    if (!f || Math.abs(f - 1) < 0.02) return text;
+    return String(text)
+      .replace(/(\d+(?:\.\d+)?)\s*(g|ml)\b/g, function (m, n, u) { return Math.round(parseFloat(n) * f) + " " + u; })
+      .replace(/\((\d+(?:\.\d+)?)\s*(fl oz|oz)\)/g, function (m, n, u) { return "(" + (Math.round(parseFloat(n) * f * 10) / 10) + " " + u + ")"; });
+  }
+  // Longest keys first so "cottage cheese" wins over "cheese".
+  function swapKeys(diet) {
+    var swaps = RB.dietSwaps[diet];
+    if (!swaps) return [];
+    return Object.keys(swaps).sort(function (a, b) { return b.length - a.length; });
+  }
+  function applyDietToIngredient(line, diet) {
+    if (!diet || diet === "omnivore") return line;
+    var swaps = RB.dietSwaps[diet];
+    if (!swaps) return line;
+    var lower = String(line).toLowerCase();
+    var keys = swapKeys(diet);
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (lower.indexOf(key) === -1) continue;
+      var base = RB.proteinFoods[key], sw = swaps[key];
+      // If the food is only a minor component mentioned mid-line (e.g. "toast
+      // with honey"), swap just that word and keep the rest of the line intact.
+      if (lower.split("—")[0].indexOf(key) === -1) {
+        return String(line).replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "ig"), sw.name);
+      }
+      // Flavour/fat items swap 1:1; real protein sources get portion-matched
+      // so the meal keeps roughly the same protein.
+      var ratio = sw.keepAmount ? 1 : ((base && sw.p) ? (base.p / sw.p) : 1);
+      var m = String(line).match(/(\d+(?:\.\d+)?)\s*g\b/);
+      if (m) return sw.name + " — " + Math.round(parseFloat(m[1]) * ratio) + " g";
+      // No weight in the original line (e.g. "2 large") — use the swap's own
+      // sensible portion rather than leaving it with no quantity at all.
+      if (sw.amount) return sw.name + " — " + sw.amount;
+      var parts = String(line).split("—");
+      return sw.name + (parts.length > 1 ? " —" + parts.slice(1).join("—") : "");
+    }
+    return line;
+  }
+  function mealIsAdapted(meal, diet) {
+    if (!diet || diet === "omnivore") return false;
+    var keys = swapKeys(diet);
+    var hay = (meal.ingredients || []).join(" | ").toLowerCase();
+    for (var i = 0; i < keys.length; i++) if (hay.indexOf(keys[i]) !== -1) return true;
+    return false;
+  }
+  function scaleMacros(m, f) {
+    return {
+      calories: Math.round(m.calories * f), protein: Math.round(m.protein * f),
+      carbs: Math.round(m.carbs * f), fat: Math.round(m.fat * f), fiber: Math.round(m.fiber * f),
+    };
+  }
+  // The nutrition plan for a day, resized to the user's calorie target and
+  // rewritten for their dietary preference.
+  function adaptedPlan(dayKey) {
+    var base = RB.nutritionPlans[dayKey];
+    var p = store.profile;
+    var t = p.onboarded ? nutritionTargets(p) : null;
+    var f = (t && base.macros.calories) ? t.calories / base.macros.calories : 1;
+    var diet = p.diet || "omnivore";
+    return {
+      focus: base.focus, fuel: base.fuel,
+      factor: f, targets: t, diet: diet,
+      macros: Math.abs(f - 1) < 0.02 ? base.macros : scaleMacros(base.macros, f),
+      meals: base.meals.map(function (meal) {
+        var renamed = (RB.mealNames[diet] && RB.mealNames[diet][meal.id]) || meal.name;
+        return {
+          id: meal.id, name: renamed, timing: meal.timing, note: meal.note,
+          adapted: mealIsAdapted(meal, diet),
+          macros: Math.abs(f - 1) < 0.02 ? meal.macros : scaleMacros(meal.macros, f),
+          ingredients: meal.ingredients.map(function (ing) {
+            return applyDietToIngredient(scaleAmounts(ing, f), diet);
+          }),
+          familyRecipe: meal.familyRecipe ? {
+            yield: meal.familyRecipe.yield,
+            steps: meal.familyRecipe.steps,
+            ingredients: meal.familyRecipe.ingredients.map(function (ing) {
+              return applyDietToIngredient(ing, diet);
+            }),
+          } : null,
+        };
+      }),
+    };
   }
 
   function todayKey() {
@@ -111,13 +297,26 @@
     var b = info.block;
     var dayDef = b.days[day];
     var exercises = [];
+    // The baseline assessment scales how much work is prescribed.
+    var prof = store.profile;
+    var tier = prof.onboarded ? fitnessTier(prof) : null;
+    var weakPull = prof.onboarded && toNum(prof.pullups) < 3;
     dayDef.exercises.forEach(function (ex) {
       var pres = info.deload ? ex.deload : ex.wk[info.idx];
       if (!pres) return;
+      // Tier 1 skips explosive power work until a base exists.
+      if (tier && tier.n === 1 && /med-ball/.test(ex.id)) return;
+      var name = ex.name, cue = ex.cue;
+      // Can't do 3 strict pull-ups yet — swap in a version that builds them.
+      if (weakPull && /pullup|chinup/.test(ex.id)) {
+        name = "Assisted " + (/chinup/.test(ex.id) ? "chin-up" : "pull-up") + " (band or machine)";
+        cue = "Use a band, the assist machine, or lat pulldown. Add slow negatives as you get stronger.";
+      }
       exercises.push({
-        id: ex.id, name: ex.name, cue: ex.cue, group: ex.group,
+        id: ex.id, name: name, cue: cue, group: ex.group,
         tempo: ex.tempo, rest: ex.rest,
-        sets: pres.sets, reps: pres.reps, target: pres.target,
+        sets: tier ? scaleSets(pres.sets, tier) : pres.sets,
+        reps: pres.reps, target: pres.target,
       });
     });
     return {
@@ -261,12 +460,185 @@
     return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0");
   }
 
+  // ---- onboarding ----
+  function nextMondayISO() {
+    var d = new Date(); d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + ((8 - d.getDay()) % 7 || 7));
+    return d.toISOString().slice(0, 10);
+  }
+  function choiceBtn(field, value, label, current, desc) {
+    return '<button type="button" class="choice-btn' + (current === value ? " active" : "") + '" data-action="ob-choice" data-field="' + field + '" data-value="' + esc(value) + '">' +
+      "<strong>" + esc(label) + "</strong>" + (desc ? "<small>" + esc(desc) + "</small>" : "") + "</button>";
+  }
+  function obField(label, field, value, type, placeholder, suffix) {
+    return "<label>" + esc(label) +
+      '<input type="' + (type || "number") + '" inputmode="' + (type === "date" ? "none" : "decimal") + '" value="' + esc(value || "") + '"' +
+      (placeholder ? ' placeholder="' + esc(placeholder) + '"' : "") +
+      ' data-action="ob-field" data-field="' + field + '" />' +
+      (suffix ? "<small>" + esc(suffix) + "</small>" : "") + "</label>";
+  }
+
+  function renderOnboarding() {
+    var d = ui.draft || (ui.draft = clone(store.profile));
+    var step = ui.onboardStep;
+    var steps = ["Program", "About you", "Ability", "Goals", "Start"];
+    var html = '<section class="screen ob-shell">';
+
+    html += '<div class="ob-progress" aria-label="Step ' + (step + 1) + " of " + steps.length + '">';
+    steps.forEach(function (s, i) {
+      html += '<span class="ob-dot' + (i === step ? " on" : (i < step ? " done" : "")) + '">' + esc(s) + "</span>";
+    });
+    html += "</div>";
+
+    if (step === 0) {
+      html += '<span class="eyebrow">Welcome</span><h1>Let’s build your plan.</h1>' +
+        '<p class="lead">Pick a program. Next we’ll take a quick baseline so the workouts and food start at the right level for you — not someone else’s.</p>';
+      html += '<div class="program-list">';
+      RB.programs.forEach(function (p) {
+        var ready = p.status === "ready";
+        var sel = d.program === p.id && ready;
+        html += '<article class="program-card' + (ready ? "" : " soon") + (sel ? " selected" : "") + '"' +
+          (ready ? ' data-action="ob-select-program" data-program="' + p.id + '" role="button" tabindex="0"' : "") + ">" +
+          '<div class="pc-head"><h2>' + esc(p.name) + "</h2><span class=\"pc-badge\">" + (ready ? "Ready" : "Coming soon") + "</span></div>" +
+          '<p class="pc-tagline">' + esc(p.tagline) + "</p>" +
+          "<p>" + esc(p.summary) + "</p><ul>";
+        p.details.forEach(function (x) { html += "<li>" + esc(x) + "</li>"; });
+        html += "</ul><div class=\"pc-meta\">" + p.weeks + " weeks · " + p.daysPerWeek + " days/week</div></article>";
+      });
+      html += "</div>";
+    }
+
+    if (step === 1) {
+      html += '<span class="eyebrow">About you</span><h1>Your numbers.</h1>' +
+        '<p class="lead">Used to calculate your calories and protein. Nothing leaves your phone.</p>';
+      html += '<div class="choice-grid two">' + choiceBtn("sex", "male", "Male", d.sex) + choiceBtn("sex", "female", "Female", d.sex) + "</div>";
+      html += '<div class="input-grid two">' + obField("Age", "age", d.age, "number", "31") + obField("Weight (lb)", "weight", d.weight, "number", "200") + "</div>";
+      html += '<div class="input-grid two">' + obField("Height (inches)", "heightIn", d.heightIn, "number", "69", "5'9\" = 69 in") + obField("Goal weight (lb)", "goalWeight", d.goalWeight, "number", "185", "optional") + "</div>";
+      html += '<h3 class="ob-sub">How active is your day outside training?</h3><div class="choice-grid">' +
+        choiceBtn("activity", "sedentary", "Sedentary", d.activity, "Desk job, little walking") +
+        choiceBtn("activity", "light", "Lightly active", d.activity, "Desk job, some walking") +
+        choiceBtn("activity", "active", "Active", d.activity, "On your feet a lot") +
+        choiceBtn("activity", "veryactive", "Very active", d.activity, "Physical job") + "</div>";
+    }
+
+    if (step === 2) {
+      html += '<span class="eyebrow">Baseline assessment</span><h1>What can you do today?</h1>' +
+        '<p class="lead">Be honest — this sets your starting volume. Don’t test to failure; a good-form estimate is fine. Leave blank if you don’t know.</p>';
+      html += '<div class="input-grid two">' +
+        obField("Push-ups", "pushups", d.pushups, "number", "20", "max in one set, good form") +
+        obField("Pull-ups", "pullups", d.pullups, "number", "5", "strict; 0 is fine") + "</div>";
+      html += '<div class="input-grid two">' +
+        obField("Bodyweight squats", "squats", d.squats, "number", "40", "max in one set") +
+        obField("Run distance (miles)", "runMiles", d.runMiles, "number", "3", "how far you can run without stopping") + "</div>";
+      var t = fitnessTier(d);
+      html += '<div class="tier-preview"><span class="eyebrow">Your starting level</span>' +
+        "<h2>Tier " + t.n + " · " + esc(t.name) + "</h2><p>" + esc(t.note) + "</p>" +
+        '<small>Capability score ' + t.score + " / 12</small></div>";
+    }
+
+    if (step === 3) {
+      html += '<span class="eyebrow">Goals & food</span><h1>What are you after?</h1>';
+      html += '<h3 class="ob-sub">Primary goal</h3><div class="choice-grid">';
+      RB.goals.forEach(function (g) { html += choiceBtn("goal", g.id, g.label, d.goal, g.desc); });
+      html += "</div>";
+      html += '<h3 class="ob-sub">Dietary preference</h3><div class="choice-grid">';
+      RB.diets.forEach(function (x) { html += choiceBtn("diet", x.id, x.label, d.diet, x.desc); });
+      html += "</div>";
+      var tg = nutritionTargets(d);
+      if (tg) {
+        html += '<div class="tier-preview"><span class="eyebrow">Your daily targets</span>' +
+          "<h2>" + tg.calories.toLocaleString() + " kcal · " + tg.protein + " g protein</h2>" +
+          "<p>" + tg.carbs + " g carbs · " + tg.fat + " g fat · " + tg.fiber + " g fiber. Maintenance is about " + tg.tdee.toLocaleString() + " kcal.</p></div>";
+      } else {
+        html += '<div class="tier-preview"><p>Add your weight and height on the previous step and we’ll calculate your calories here.</p></div>';
+      }
+    }
+
+    if (step === 4) {
+      if (!d.startDate) d.startDate = nextMondayISO();
+      var prog = programById(d.program);
+      var tier2 = fitnessTier(d);
+      var tg2 = nutritionTargets(d);
+      html += '<span class="eyebrow">Almost there</span><h1>When do you start?</h1>' +
+        '<p class="lead">Week 1 begins on this date. The app tracks which week you’re in from here.</p>';
+      html += '<div class="input-grid two">' + obField("Start date", "startDate", d.startDate, "date") + "</div>";
+      html += '<div class="review-card"><h3>Your plan</h3><dl>' +
+        "<div><dt>Program</dt><dd>" + esc(prog.name) + " · " + prog.weeks + " weeks</dd></div>" +
+        "<div><dt>Starting level</dt><dd>Tier " + tier2.n + " · " + esc(tier2.name) + "</dd></div>" +
+        "<div><dt>Goal</dt><dd>" + esc(goalById(d.goal).label) + "</dd></div>" +
+        "<div><dt>Diet</dt><dd>" + esc(dietById(d.diet).label) + "</dd></div>" +
+        (tg2 ? "<div><dt>Daily target</dt><dd>" + tg2.calories.toLocaleString() + " kcal · " + tg2.protein + " g protein</dd></div>" : "") +
+        "</dl></div>";
+    }
+
+    html += '<div class="ob-actions">';
+    if (step > 0) html += '<button class="secondary-button" type="button" data-action="ob-back">Back</button>';
+    if (step < 4) html += '<button class="primary-button" type="button" data-action="ob-next">Continue</button>';
+    else html += '<button class="primary-button" type="button" data-action="ob-finish">Start my program</button>';
+    html += "</div></section>";
+    return html;
+  }
+
+  // ---- home ----
+  function renderHome() {
+    var p = store.profile;
+    var prog = programById(p.program);
+    var tier = fitnessTier(p);
+    var tg = nutritionTargets(p);
+    var prog2 = programProgress(p);
+
+    var html = '<section class="screen" aria-labelledby="home-heading">';
+    html += '<span class="eyebrow">Your program</span><h1 id="home-heading">' + esc(prog.name) + "</h1>";
+    html += '<p class="lead">' + esc(prog.summary) + "</p>";
+
+    if (prog2) {
+      if (prog2.status === "upcoming") {
+        html += '<div class="home-status"><strong>Starts in ' + prog2.daysUntil + " day" + (prog2.daysUntil === 1 ? "" : "s") + "</strong><small>Week 1 begins " + esc(p.startDate) + "</small></div>";
+      } else if (prog2.status === "complete") {
+        html += '<div class="home-status"><strong>Program complete</strong><small>All ' + prog2.total + " weeks done — time to retest and pick the next block.</small></div>";
+      } else {
+        html += '<div class="home-status"><strong>Week ' + prog2.week + " of " + prog2.total + "</strong><small>Day " + prog2.dayOfWeek + " · started " + esc(p.startDate) + "</small></div>";
+      }
+    }
+
+    html += '<div class="stat-grid">';
+    html += statTile("Level", "Tier " + tier.n, { text: tier.name, tone: "" });
+    html += statTile("Goal", esc(goalById(p.goal).label), { text: p.goalWeight ? "target " + p.goalWeight + " lb" : "no target set", tone: "" });
+    html += statTile("Daily calories", tg ? tg.calories.toLocaleString() : "—", { text: tg ? "maintenance ~" + tg.tdee.toLocaleString() : "add your metrics", tone: "" });
+    html += statTile("Protein", tg ? tg.protein + ' <span class="stat-unit">g</span>' : "—", { text: esc(dietById(p.diet).label), tone: "" });
+    html += "</div>";
+
+    html += '<div class="progression-note">' + esc(tier.note) + "</div>";
+
+    html += '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Adjust</span><h2>Your setup</h2></div></div>' +
+      '<div class="home-actions">' +
+      '<button class="secondary-button" type="button" data-action="redo-assessment">Redo assessment</button>' +
+      '<button class="secondary-button" type="button" data-action="change-program">Change program</button>' +
+      "</div></section>";
+
+    html += '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Library</span><h2>Other programs</h2></div></div>';
+    html += '<div class="program-list">';
+    RB.programs.forEach(function (x) {
+      if (x.id === p.program) return;
+      var ready = x.status === "ready";
+      html += '<article class="program-card' + (ready ? "" : " soon") + '">' +
+        '<div class="pc-head"><h2>' + esc(x.name) + '</h2><span class="pc-badge">' + (ready ? "Ready" : "Coming soon") + "</span></div>" +
+        '<p class="pc-tagline">' + esc(x.tagline) + "</p><p>" + esc(x.summary) + "</p>" +
+        '<div class="pc-meta">' + x.weeks + " weeks · " + x.daysPerWeek + " days/week</div></article>";
+    });
+    html += "</div></section>";
+
+    html += "</section>";
+    return html;
+  }
+
   // ---- screens ----
   function renderToday() {
     var week = store.currentWeek;
     var today = todayKey();
     var session = sessionFor(today, week);
-    var plan = RB.nutritionPlans[today];
+    var plan = adaptedPlan(today);
+    var tg = nutritionTargets(store.profile);
     var dateStr = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
     var sub = session.kind === "strength" ? session.subtitle : session.prescription;
 
@@ -277,8 +649,8 @@
 
     html += '<div class="metric-grid">' +
       '<article class="metric-card"><span>Plan</span><strong>Week ' + week + "</strong><small>" + phaseForWeek(week) + " phase</small></article>" +
-      '<article class="metric-card"><span>Nutrition</span><strong>2,500</strong><small>kcal starting target</small></article>' +
-      '<article class="metric-card"><span>Protein</span><strong>175+</strong><small>grams per day</small></article></div>';
+      '<article class="metric-card"><span>Nutrition</span><strong>' + (tg ? tg.calories.toLocaleString() : plan.macros.calories.toLocaleString()) + "</strong><small>kcal daily target</small></article>" +
+      '<article class="metric-card"><span>Protein</span><strong>' + (tg ? tg.protein : plan.macros.protein) + "</strong><small>grams per day</small></article></div>";
 
     html += '<article class="feature-card workout-hero">' +
       '<div class="card-kicker">Today’s assignment</div>' +
@@ -440,9 +812,25 @@
 
     if (ui.nutritionMode === "plan") {
       var day = ui.nutritionDay;
-      var plan = RB.nutritionPlans[day];
+      var plan = adaptedPlan(day);
       html += dayPicker(day, "select-nutrition-day");
       html += '<article class="nutrition-summary"><div><span class="eyebrow">' + esc(plan.focus) + "</span><h2>" + plan.macros.calories + " kcal · " + plan.macros.protein + " g protein</h2><p>" + esc(plan.fuel) + "</p></div>" + macroLine(plan.macros) + "</article>";
+      // Say plainly how this plan was personalized.
+      var adaptBits = [];
+      if (Math.abs(plan.factor - 1) >= 0.02) adaptBits.push("Portions scaled to " + Math.round(plan.factor * 100) + "% of the base plan to hit your " + (plan.targets ? plan.targets.calories.toLocaleString() + " kcal" : "calorie") + " target.");
+      if (plan.diet && plan.diet !== "omnivore") adaptBits.push("Protein sources swapped for your " + dietById(plan.diet).label.toLowerCase() + " preference — portions are matched on protein, so calories and fat shift a little. Check labels.");
+      if (adaptBits.length) html += '<div class="progression-note">' + esc(adaptBits.join(" ")) + "</div>";
+      // Never show a protein target next to a plan that misses it without saying so.
+      if (plan.targets) {
+        var gap = plan.targets.protein - plan.macros.protein;
+        if (gap >= 10) {
+          html += '<div class="gap-note"><strong>' + gap + " g protein short of your target</strong><p>This day's meals come to " +
+            plan.macros.protein + " g but you're aiming for " + plan.targets.protein +
+            " g. Close it with a protein shake, an extra serving of your main protein at dinner, or a high-protein yogurt.</p></div>";
+        } else if (gap <= -15) {
+          html += '<div class="gap-note"><strong>' + Math.abs(gap) + " g protein over your target</strong><p>Not a problem — extra protein is the safest macro to be over on. Trim a snack if you'd rather match exactly.</p></div>";
+        }
+      }
 
       html += '<details class="measurement-note"><summary>How to weigh your food</summary><ul>';
       RB.measurementRules.forEach(function (rule) { html += "<li>" + esc(rule) + "</li>"; });
@@ -456,7 +844,7 @@
         var key = day + ":" + meal.id;
         var complete = Boolean(store.completedMeals[key]);
         html += '<article class="meal-card' + (complete ? " meal-complete" : "") + '" data-meal="' + esc(key) + '">' +
-          '<div class="meal-heading"><div><span>' + esc(meal.timing) + "</span><h2>" + esc(meal.name) + "</h2></div>" +
+          '<div class="meal-heading"><div><span>' + esc(meal.timing) + (meal.adapted ? ' <em class="swap-chip">' + esc(dietById(plan.diet).label) + " swap</em>" : "") + "</span><h2>" + esc(meal.name) + "</h2></div>" +
           '<button type="button" data-action="log-meal" data-key="' + esc(key) + '">' + (complete ? "Logged ✓" : "Log meal") + "</button></div>" +
           macroLine(meal.macros);
         html += '<ul class="ingredient-list">';
@@ -691,11 +1079,17 @@
 
   // ---- top-level render ----
   function renderTopbar() {
-    var week = store.currentWeek;
     var el = document.getElementById("topbar");
+    if (!store.profile.onboarded) {
+      el.innerHTML = '<div class="brand-mark" aria-hidden="true">R</div>' +
+        '<div class="brand-copy"><p>REBUILD</p><span>Set up your plan</span></div>' +
+        '<span class="phase-pill">Setup</span>';
+      return;
+    }
+    var week = store.currentWeek;
     el.innerHTML =
       '<div class="brand-mark" aria-hidden="true">R</div>' +
-      '<div class="brand-copy"><p>REBUILD</p><span>Hybrid training · Week ' + week + "</span></div>" +
+      '<div class="brand-copy"><p>REBUILD</p><span>' + esc(programById(store.profile.program).name) + " · Week " + week + "</span></div>" +
       '<span class="phase-pill">' + phaseForWeek(week) + "</span>";
   }
 
@@ -715,7 +1109,17 @@
     stopRest();
     renderTopbar();
     var main = document.getElementById("main");
-    if (ui.tab === "today") main.innerHTML = renderToday();
+    var nav = document.getElementById("bottom-nav");
+    // Until the baseline assessment is done, the app is the setup flow.
+    if (!store.profile.onboarded) {
+      main.innerHTML = renderOnboarding();
+      nav.hidden = true;
+      nav.innerHTML = "";
+      return;
+    }
+    nav.hidden = false;
+    if (ui.tab === "home") main.innerHTML = renderHome();
+    else if (ui.tab === "today") main.innerHTML = renderToday();
     else if (ui.tab === "workouts") main.innerHTML = renderWorkouts();
     else if (ui.tab === "nutrition") main.innerHTML = renderNutrition();
     else main.innerHTML = renderProgress();
@@ -864,6 +1268,51 @@
         ui.nutritionMode = el.getAttribute("data-mode");
         render();
         break;
+      case "ob-select-program":
+        if (ui.draft) ui.draft.program = el.getAttribute("data-program");
+        render();
+        break;
+      case "ob-choice":
+        if (ui.draft) ui.draft[el.getAttribute("data-field")] = el.getAttribute("data-value");
+        render();
+        break;
+      case "ob-next":
+        ui.onboardStep = Math.min(4, ui.onboardStep + 1);
+        render(); goTop();
+        break;
+      case "ob-back":
+        ui.onboardStep = Math.max(0, ui.onboardStep - 1);
+        render(); goTop();
+        break;
+      case "ob-finish": {
+        var d = ui.draft || clone(store.profile);
+        if (!d.startDate) d.startDate = nextMondayISO();
+        d.onboarded = true;
+        store.profile = clone(d);
+        if (d.weight) ui.checkWeight = String(d.weight);
+        syncWeekFromStart();
+        save();
+        ui.draft = null;
+        ui.onboardStep = 0;
+        ui.tab = "home";
+        render(); goTop();
+        toast("Your plan is ready.");
+        break;
+      }
+      case "redo-assessment":
+        ui.draft = clone(store.profile);
+        ui.onboardStep = 2;
+        store.profile.onboarded = false;
+        save();
+        render(); goTop();
+        break;
+      case "change-program":
+        ui.draft = clone(store.profile);
+        ui.onboardStep = 0;
+        store.profile.onboarded = false;
+        save();
+        render(); goTop();
+        break;
       case "body-metric":
         ui.bodyMetric = el.getAttribute("data-metric");
         render();
@@ -971,6 +1420,12 @@
       case "check-field":
         ui[el.getAttribute("data-field")] = el.value;
         break;
+      case "ob-field":
+        if (ui.draft) ui.draft[el.getAttribute("data-field")] = el.value;
+        // Refresh the live tier / calorie preview once the field is committed,
+        // never mid-keystroke (that would steal focus).
+        if (e.type === "change") render();
+        break;
       case "set-week":
         store.currentWeek = Number(el.value);
         save();
@@ -1016,6 +1471,8 @@
   // ---- boot ----
   function init() {
     load();
+    if (store.profile.onboarded) syncWeekFromStart();
+    else ui.draft = clone(store.profile);
     var t = todayKey();
     ui.selectedDay = t;
     ui.nutritionDay = t;

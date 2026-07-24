@@ -249,6 +249,178 @@ RB.strengthBlocks = (function () {
   ];
 })();
 
+// ---- Program catalogue (home screen) ----
+// `status: "ready"` means the full week-by-week content exists. Anything marked
+// "soon" is described honestly but not startable yet.
+RB.programs = [
+  {
+    id: "hybrid", name: "Hybrid Training", status: "ready",
+    tagline: "Strength + running, 12 weeks",
+    summary: "Rebuild strength and run fitness at the same time, without either one wrecking the other.",
+    details: [
+      "3 lifting days — periodized Foundation → Build → Peak blocks with automatic load targets",
+      "3 runs — easy, quality/intervals and a long run that build across 12 weeks",
+      "Deloads on weeks 4 and 8, 5K benchmark on week 12",
+      "Sunday fully off",
+    ],
+    daysPerWeek: 6, weeks: 12, activityFactor: 1.55,
+  },
+  {
+    id: "triathlon", name: "Triathlon Prep", status: "soon",
+    tagline: "Swim / bike / run, sprint to olympic",
+    summary: "Three-sport base building with brick sessions and a race-week taper.",
+    details: [
+      "Swim technique and endurance progressions",
+      "Bike intervals plus a weekly long ride",
+      "Run off the bike (bricks) and open runs",
+      "Two short strength sessions to stay durable",
+    ],
+    daysPerWeek: 6, weeks: 12, activityFactor: 1.7,
+  },
+  {
+    id: "run", name: "Run-Only Race Prep", status: "soon",
+    tagline: "5K / 10K / half marathon",
+    summary: "A pure running block built on easy mileage with one quality session a week.",
+    details: [
+      "Mostly easy aerobic mileage with a weekly long run",
+      "One threshold or interval session per week",
+      "Strides and light mobility to keep turnover sharp",
+      "Optional 2 short lifting days for injury resilience",
+    ],
+    daysPerWeek: 5, weeks: 12, activityFactor: 1.6,
+  },
+  {
+    id: "strength", name: "Strength & Hypertrophy", status: "soon",
+    tagline: "Pure lifting, no running required",
+    summary: "An upper/lower split focused on getting stronger and adding muscle.",
+    details: [
+      "4 lifting days on an upper/lower split",
+      "Heavy compound work plus higher-rep accessories",
+      "Automatic load progression on every main lift",
+      "Optional low-impact conditioning for recovery",
+    ],
+    daysPerWeek: 4, weeks: 12, activityFactor: 1.45,
+  },
+  {
+    id: "bodyweight", name: "Bodyweight / Travel", status: "soon",
+    tagline: "Minimal or no equipment",
+    summary: "Stay in shape anywhere — hotel rooms, deployments, or no gym access.",
+    details: [
+      "Full-body bodyweight circuits that scale to your level",
+      "Push, pull, squat and hinge progressions using only your bodyweight",
+      "Short conditioning finishers needing zero equipment",
+      "Optional band or backpack loading",
+    ],
+    daysPerWeek: 5, weeks: 8, activityFactor: 1.4,
+  },
+];
+
+// ---- Goals (drive the calorie/protein calculation) ----
+RB.goals = [
+  { id: "lose", label: "Lose fat", desc: "Drop body fat while holding onto strength.", calAdj: -0.15, proteinPerKg: 2.0 },
+  { id: "recomp", label: "Recomp", desc: "Lean out slowly while gaining a little muscle.", calAdj: -0.07, proteinPerKg: 2.1 },
+  { id: "lean", label: "Build lean muscle", desc: "Add muscle with minimal fat gain.", calAdj: 0.10, proteinPerKg: 2.0 },
+  { id: "perform", label: "Perform / maintain", desc: "Fuel training and hold current weight.", calAdj: 0, proteinPerKg: 1.8 },
+];
+
+// ---- Dietary preference ----
+RB.diets = [
+  { id: "omnivore", label: "No restrictions", desc: "Everything's on the table." },
+  { id: "pescatarian", label: "Pescatarian", desc: "Fish and seafood, no other meat." },
+  { id: "vegetarian", label: "Vegetarian", desc: "No meat or fish; dairy and eggs are fine." },
+  { id: "vegan", label: "Vegan", desc: "No animal products at all." },
+];
+
+// Protein swaps applied to meal ingredients when the diet excludes an item.
+// `p` is grams of protein per 100 g of the food, used to size the replacement
+// portion so it matches the protein it's standing in for.
+RB.proteinFoods = {
+  "chicken breast": { p: 31, kinds: ["omnivore"] },
+  "ground turkey": { p: 27, kinds: ["omnivore"] },
+  "ground beef": { p: 26, kinds: ["omnivore"] },
+  "beef patty": { p: 26, kinds: ["omnivore"] },
+  "deli turkey": { p: 17, kinds: ["omnivore"] },
+  "shrimp": { p: 24, kinds: ["omnivore", "pescatarian"] },
+  "tuna": { p: 25, kinds: ["omnivore", "pescatarian"] },
+  "eggs": { p: 13, kinds: ["omnivore", "pescatarian", "vegetarian"] },
+  "egg whites": { p: 11, kinds: ["omnivore", "pescatarian", "vegetarian"] },
+  "greek yogurt": { p: 10, kinds: ["omnivore", "pescatarian", "vegetarian"] },
+  "cottage cheese": { p: 11, kinds: ["omnivore", "pescatarian", "vegetarian"] },
+  "whey protein": { p: 80, kinds: ["omnivore", "pescatarian", "vegetarian"] },
+  "milk": { p: 3.4, kinds: ["omnivore", "pescatarian", "vegetarian"] },
+  "cheese": { p: 25, kinds: ["omnivore", "pescatarian", "vegetarian"] },
+};
+
+// What each excluded food becomes, per diet.
+RB.dietSwaps = {
+  pescatarian: {
+    "chicken breast": { name: "Salmon or white fish", p: 25 },
+    "ground turkey": { name: "Canned salmon or white fish", p: 24 },
+    "ground beef": { name: "Canned salmon or white fish", p: 24 },
+    "beef patty": { name: "Salmon patty", p: 22 },
+    "deli turkey": { name: "Smoked salmon or tuna", p: 22 },
+  },
+  vegetarian: {
+    "chicken breast": { name: "Extra-firm tofu or seitan", p: 19 },
+    "ground turkey": { name: "Plant mince (soy/pea)", p: 18 },
+    "ground beef": { name: "Plant mince (soy/pea)", p: 18 },
+    "beef patty": { name: "Black-bean or plant patty", p: 15 },
+    "deli turkey": { name: "Marinated tempeh", p: 19 },
+    "shrimp": { name: "Edamame + tempeh", p: 18 },
+    "tuna": { name: "Chickpea + tahini mash", p: 9 },
+  },
+  vegan: {
+    "chicken breast": { name: "Extra-firm tofu or seitan", p: 19 },
+    "ground turkey": { name: "Plant mince (soy/pea)", p: 18 },
+    "ground beef": { name: "Plant mince (soy/pea)", p: 18 },
+    "beef patty": { name: "Black-bean or plant patty", p: 15 },
+    "deli turkey": { name: "Marinated tempeh", p: 19 },
+    "shrimp": { name: "Edamame + tempeh", p: 18 },
+    "tuna": { name: "Chickpea + tahini mash", p: 9 },
+    "eggs": { name: "Tofu scramble", p: 13, amount: "150 g" },
+    "egg whites": { name: "Extra tofu (firm)", p: 17 },
+    "greek yogurt": { name: "Soy yogurt (high-protein)", p: 6 },
+    "cottage cheese": { name: "Silken tofu, blended", p: 8 },
+    "whey protein": { name: "Pea/soy protein isolate", p: 80 },
+    "milk": { name: "Soy milk", p: 3.3 },
+    // Cheese is here for flavour and fat, not as a protein source — swap it
+    // gram-for-gram instead of scaling the portion up to match protein.
+    "cheese": { name: "Plant-based cheese", p: 5, keepAmount: true },
+    "honey": { name: "Maple syrup", keepAmount: true },
+  },
+};
+
+// Meal titles rewritten so the name matches what's actually on the plate.
+RB.mealNames = {
+  pescatarian: {
+    "chicken-rice-120": "Salmon rice bowl", "chicken-rice-90": "Salmon rice bowl",
+    "taco-bowl": "Fish taco bowls", "turkey-sandwich-lunch": "Tuna sandwich plate",
+    "turkey-sandwich-light": "Tuna sandwich plate", "sheet-pan-chicken": "Sheet-pan salmon & potatoes",
+    "spaghetti-dinner": "Spaghetti & tomato ragù", "burger-dinner": "Salmon burger, oven fries & salad",
+    "fajita-dinner": "Shrimp fajitas", "chili-dinner": "Bean chili & cornbread",
+  },
+  vegetarian: {
+    "chicken-rice-120": "Tofu rice bowl", "chicken-rice-90": "Tofu rice bowl",
+    "taco-bowl": "Plant-mince taco bowls", "turkey-sandwich-lunch": "Tempeh sandwich plate",
+    "turkey-sandwich-light": "Tempeh sandwich plate", "sheet-pan-chicken": "Sheet-pan tofu & potatoes",
+    "spaghetti-dinner": "Spaghetti & plant-mince sauce", "tuna-rice-lunch": "Chickpea, rice & bean bowl",
+    "shrimp-stir-fry": "Tempeh & edamame stir-fry", "burger-dinner": "Veggie burger, oven fries & salad",
+    "fajita-dinner": "Tofu fajitas", "chili-dinner": "Plant chili & cornbread",
+  },
+  vegan: {
+    "egg-oat-breakfast": "Tofu scramble, oats & berries", "chicken-rice-120": "Tofu rice bowl",
+    "chicken-rice-90": "Tofu rice bowl", "yogurt-whey-banana": "Soy yogurt, protein & banana",
+    "whey-banana": "Protein shake & banana", "yogurt-granola-snack": "Soy yogurt power bowl",
+    "taco-bowl": "Plant-mince taco bowls", "yogurt-oat-breakfast": "Soy yogurt oat bowl",
+    "turkey-sandwich-lunch": "Tempeh sandwich plate", "turkey-sandwich-light": "Tempeh sandwich plate",
+    "sheet-pan-chicken": "Sheet-pan tofu & potatoes", "spaghetti-dinner": "Spaghetti & plant-mince sauce",
+    "egg-sandwich-breakfast": "Tofu & cheese breakfast sandwich", "tuna-rice-lunch": "Chickpea, rice & bean bowl",
+    "shrimp-stir-fry": "Tempeh & edamame stir-fry", "burger-dinner": "Plant burger, oven fries & salad",
+    "fajita-dinner": "Tofu fajitas", "cottage-snack": "Silken tofu, apple & granola",
+    "chili-dinner": "Plant chili & cornbread",
+  },
+};
+
 // ---- Automatic load progression ----
 // How much weight to add when last week's work was completed at RPE ≤ 8.
 // Bigger jumps on big lower-body/hinge patterns, small jumps on isolation.
