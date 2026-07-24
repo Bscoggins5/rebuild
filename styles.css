@@ -294,6 +294,15 @@ summary { cursor: pointer; font-weight: 850; }
 .choice-btn.active { background: rgba(137, 232, 168, 0.1); border-color: var(--accent); }
 .choice-btn.active strong { color: var(--accent); }
 
+.test-list { display: grid; gap: 10px; margin-top: 18px; }
+.test-row { align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; display: flex; gap: 14px; justify-content: space-between; padding: 13px 15px; }
+.test-copy strong { color: var(--ink); display: block; font-size: 15px; font-weight: 800; }
+.test-copy small { color: var(--muted); display: block; font-size: 12px; line-height: 1.35; margin-top: 3px; }
+.test-input { align-items: center; display: flex; flex: 0 0 auto; gap: 7px; }
+.test-input input { margin: 0; min-height: 44px; text-align: center; width: 88px; }
+.test-input span { color: var(--dim); font-size: 12px; font-weight: 700; min-width: 34px; }
+.seed-list { color: var(--muted); font-size: 14px; margin: 8px 0 10px; padding-left: 18px; }
+.seed-list li { margin-bottom: 3px; }
 .tier-preview { background: rgba(137, 232, 168, 0.07); border: 1px solid rgba(137, 232, 168, 0.24); border-radius: 16px; margin-top: 24px; padding: 18px; }
 .tier-preview h2 { margin: 4px 0 8px; }
 .tier-preview p { color: var(--muted); margin-bottom: 6px; }

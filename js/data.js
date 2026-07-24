@@ -315,6 +315,47 @@ RB.programs = [
   },
 ];
 
+// ---- Baseline assessment ----
+// Recognized field tests. Each scores 0–3 against common fitness standards;
+// `bands` are the thresholds for 1, 2 and 3 points. `reverse` = lower is better.
+RB.baselineTests = [
+  { id: "pushups", label: "Max push-ups", unit: "reps", placeholder: "20",
+    hint: "One set, chest to fist height, no rest. Stop when form breaks.", bands: [10, 20, 35] },
+  { id: "pullups", label: "Max strict pull-ups", unit: "reps", placeholder: "5",
+    hint: "Dead hang to chin over the bar, no kipping. Zero is a valid answer.", bands: [1, 5, 10] },
+  { id: "squats", label: "Bodyweight squats in 60 sec", unit: "reps", placeholder: "35",
+    hint: "Thighs to at least parallel, moving continuously for one minute.", bands: [20, 35, 50] },
+  { id: "plank", label: "Front plank hold", unit: "seconds", placeholder: "60",
+    hint: "Elbows under shoulders, straight line head to heel. Stop when the hips sag.", bands: [30, 60, 120] },
+  { id: "runTest", label: "1.5-mile run", unit: "mm:ss", placeholder: "13:30", time: true,
+    hint: "The standard aerobic field test — run it hard but even. Leave blank if you haven't done one.",
+    bands: [960, 780, 630], reverse: true },
+];
+
+// ---- Starting-weight estimates ----
+// Asked at the end of the assessment and used to seed the first session's
+// target load for every lift that maps to one of them.
+RB.liftSeeds = [
+  { id: "squat", label: "Back squat", hint: "Barbell on your back" },
+  { id: "bench", label: "Bench press", hint: "Barbell, flat bench" },
+  { id: "deadlift", label: "Deadlift", hint: "Trap-bar or conventional" },
+  { id: "press", label: "Overhead press", hint: "Standing barbell press" },
+];
+
+// exercise id -> which estimate it derives from, and the ratio to apply.
+// Dumbbell movements are per-hand, hence the small factors.
+RB.seedMap = {
+  "back-squat": { s: "squat", f: 1 }, "back-squat-heavy": { s: "squat", f: 1 }, "front-squat": { s: "squat", f: 0.8 },
+  "bb-bench": { s: "bench", f: 1 }, "bb-bench-heavy": { s: "bench", f: 1 },
+  "db-bench": { s: "bench", f: 0.38 }, "incline-db": { s: "bench", f: 0.33 },
+  "low-incline-db": { s: "bench", f: 0.33 }, "incline-db-heavy": { s: "bench", f: 0.35 },
+  "trap-deadlift": { s: "deadlift", f: 1.05 }, "deadlift-heavy": { s: "deadlift", f: 1 }, "rdl": { s: "deadlift", f: 0.6 },
+  "ohp": { s: "press", f: 1 }, "ohp-heavy": { s: "press", f: 1 }, "push-press": { s: "press", f: 1.15 },
+  "cs-row": { s: "bench", f: 0.7 }, "seal-row": { s: "bench", f: 0.65 }, "tbar-row": { s: "bench", f: 0.7 },
+  "pendlay-row": { s: "bench", f: 0.75 }, "cs-row-heavy": { s: "bench", f: 0.75 }, "one-arm-row": { s: "bench", f: 0.35 },
+  "hip-thrust": { s: "squat", f: 0.9 }, "hip-thrust-heavy": { s: "squat", f: 1 },
+};
+
 // ---- Goals (drive the calorie/protein calculation) ----
 RB.goals = [
   { id: "lose", label: "Lose fat", desc: "Drop body fat while holding onto strength.", calAdj: -0.15, proteinPerKg: 2.0 },

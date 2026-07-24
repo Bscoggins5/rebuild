@@ -20,7 +20,8 @@
       startDate: "",
       age: "", sex: "male", heightIn: "", weight: "", goalWeight: "",
       activity: "light",
-      pushups: "", pullups: "", squats: "", runMiles: "",
+      pushups: "", pullups: "", squats: "", plank: "", runTest: "",
+      lifts: {},
       goal: "lose",
       diet: "omnivore",
     },
@@ -101,26 +102,62 @@
     return RB.diets[0];
   }
 
-  // Baseline assessment -> a 0–12 capability score -> a training tier that
-  // scales how much work the program prescribes.
-  function fitnessScore(p) {
+  // "12:30" -> 750 seconds; a bare number is read as minutes.
+  function parseTime(str) {
+    if (!str) return 0;
+    var m = String(str).trim().match(/^(\d+):(\d{1,2})$/);
+    if (m) return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+    var n = parseFloat(str);
+    return isFinite(n) ? n * 60 : 0;
+  }
+  // Score one field test 0–3 against its bands. null = not answered.
+  function testScore(t, raw) {
+    var v = t.time ? parseTime(raw) : toNum(raw);
+    if (t.id === "pullups" && String(raw).trim() === "0") v = 0.0001; // 0 is a real answer
+    if (!v || v < 0) return null;
     var s = 0;
-    var pu = toNum(p.pushups); s += pu >= 35 ? 3 : pu >= 20 ? 2 : pu >= 10 ? 1 : 0;
-    var pl = toNum(p.pullups); s += pl >= 10 ? 3 : pl >= 5 ? 2 : pl >= 1 ? 1 : 0;
-    var sq = toNum(p.squats); s += sq >= 60 ? 3 : sq >= 40 ? 2 : sq >= 20 ? 1 : 0;
-    var rm = toNum(p.runMiles); s += rm >= 5 ? 3 : rm >= 3 ? 2 : rm >= 1 ? 1 : 0;
+    for (var i = 0; i < t.bands.length; i++) {
+      if (t.reverse ? v <= t.bands[i] : v >= t.bands[i]) s = i + 1;
+    }
     return s;
   }
+  // Only the tests actually answered count, so skipping one doesn't tank the
+  // result. Score is expressed as a percentage of what was attempted.
+  function fitnessScore(p) {
+    var got = 0, max = 0, answered = 0;
+    RB.baselineTests.forEach(function (t) {
+      var s = testScore(t, p[t.id]);
+      if (s === null) return;
+      answered++; got += s; max += 3;
+    });
+    return { got: got, max: max, answered: answered, pct: max ? got / max : 0 };
+  }
   function fitnessTier(p) {
-    var s = fitnessScore(p);
-    if (s <= 3) return { n: 1, score: s, name: "Restart", setScale: 0.6, runPct: 70,
-      note: "Your assessment says start light. Sets are trimmed, power work is removed, and runs are run/walk — aim for about 70% of the listed time. Build the habit first; the loads climb on their own." };
-    if (s <= 7) return { n: 2, score: s, name: "Rebuild", setScale: 0.8, runPct: 85,
-      note: "You have a base but it needs re-lighting. Volume is slightly reduced and runs target about 85% of the listed time for the first block." };
-    if (s <= 11) return { n: 3, score: s, name: "Standard", setScale: 1, runPct: 100,
-      note: "You're fit enough for the program as written. Run the sets, reps and times exactly as prescribed." };
-    return { n: 4, score: s, name: "Advanced", setScale: 1.15, runPct: 110,
-      note: "Strong starting point. An extra set is added to the main lifts and you can run the top of every range." };
+    var sc = fitnessScore(p);
+    function T(n, name, setScale, runPct, note) {
+      return { n: n, name: name, setScale: setScale, runPct: runPct, note: note,
+        score: sc.got, maxScore: sc.max, answered: sc.answered };
+    }
+    if (!sc.answered) return T(2, "Rebuild", 0.8, 85,
+      "No assessment results yet, so you're starting at a moderate default. Fill in the baseline tests and the program will size itself to you.");
+    if (sc.pct < 0.30) return T(1, "Restart", 0.6, 70,
+      "Your assessment says start light. Sets are trimmed, power work is removed, and runs are run/walk — aim for about 70% of the listed time. Build the habit first; the loads climb on their own.");
+    if (sc.pct < 0.55) return T(2, "Rebuild", 0.8, 85,
+      "You have a base but it needs re-lighting. Volume is slightly reduced and runs target about 85% of the listed time for the first block.");
+    if (sc.pct < 0.85) return T(3, "Standard", 1, 100,
+      "You're fit enough for the program as written. Run the sets, reps and times exactly as prescribed.");
+    return T(4, "Advanced", 1.15, 110,
+      "Strong starting point. An extra set is added to the main lifts and you can run the top of every range.");
+  }
+
+  // Starting weight for a lift, derived from the assessment estimates.
+  function seedLoadFor(exId) {
+    var map = RB.seedMap[exId];
+    if (!map) return 0;
+    var lifts = (store.profile && store.profile.lifts) || {};
+    var base = toNum(lifts[map.s]);
+    if (!base) return 0;
+    return roundLoad(base * map.f);
   }
   function scaleSets(sets, tier) {
     if (sets <= 1) return sets;
@@ -369,10 +406,19 @@
   //   deload   -> ~85% of last top
   function suggestLoad(ex, week) {
     if (RB.noLoadProgress && RB.noLoadProgress.indexOf(ex.id) !== -1) return null;
-    var last = lastSessionFor(ex.id, week);
-    if (!last) return null;
     var info = blockForWeek(week);
     var deload = !!(info && info.deload);
+    var last = lastSessionFor(ex.id, week);
+    // Nothing logged yet — start from what they estimated in the assessment.
+    if (!last) {
+      var seed = seedLoadFor(ex.id);
+      if (!seed) return null;
+      return {
+        target: deload ? roundLoad(seed * 0.85) : seed,
+        last: 0, lastWeek: 0, seeded: true, carried: false,
+        basis: "starting point from your assessment estimate",
+      };
+    }
     var step = loadStepFor(ex.id);
     var target, basis;
     if (deload) {
@@ -481,7 +527,7 @@
   function renderOnboarding() {
     var d = ui.draft || (ui.draft = clone(store.profile));
     var step = ui.onboardStep;
-    var steps = ["Program", "About you", "Ability", "Goals", "Start"];
+    var steps = ["Program", "About you", "Ability", "Lifts", "Goals", "Start"];
     var html = '<section class="screen ob-shell">';
 
     html += '<div class="ob-progress" aria-label="Step ' + (step + 1) + " of " + steps.length + '">';
@@ -492,7 +538,7 @@
 
     if (step === 0) {
       html += '<span class="eyebrow">Welcome</span><h1>Let’s build your plan.</h1>' +
-        '<p class="lead">Pick a program. Next we’ll take a quick baseline so the workouts and food start at the right level for you — not someone else’s.</p>';
+        '<p class="lead">Tap a program to get started. Next we’ll take a quick baseline so the workouts and food start at the right level for you — not someone else’s.</p>';
       html += '<div class="program-list">';
       RB.programs.forEach(function (p) {
         var ready = p.status === "ready";
@@ -522,21 +568,50 @@
     }
 
     if (step === 2) {
-      html += '<span class="eyebrow">Baseline assessment</span><h1>What can you do today?</h1>' +
-        '<p class="lead">Be honest — this sets your starting volume. Don’t test to failure; a good-form estimate is fine. Leave blank if you don’t know.</p>';
-      html += '<div class="input-grid two">' +
-        obField("Push-ups", "pushups", d.pushups, "number", "20", "max in one set, good form") +
-        obField("Pull-ups", "pullups", d.pullups, "number", "5", "strict; 0 is fine") + "</div>";
-      html += '<div class="input-grid two">' +
-        obField("Bodyweight squats", "squats", d.squats, "number", "40", "max in one set") +
-        obField("Run distance (miles)", "runMiles", d.runMiles, "number", "3", "how far you can run without stopping") + "</div>";
-      var t = fitnessTier(d);
+      html += '<span class="eyebrow">Baseline assessment</span><h1>Test yourself.</h1>' +
+        '<p class="lead">Standard field tests. Do them rested and spread over a day or two — don’t grind all five back to back. Skip any you can’t do; we score what you complete.</p>';
+      html += '<div class="test-list">';
+      RB.baselineTests.forEach(function (t) {
+        html += '<label class="test-row"><div class="test-copy"><strong>' + esc(t.label) + "</strong><small>" + esc(t.hint) + "</small></div>" +
+          '<div class="test-input"><input type="' + (t.time ? "text" : "number") + '" inputmode="' + (t.time ? "numeric" : "decimal") +
+          '" placeholder="' + esc(t.placeholder) + '" value="' + esc(d[t.id] || "") + '" data-action="ob-field" data-field="' + t.id + '" />' +
+          "<span>" + esc(t.unit) + "</span></div></label>";
+      });
+      html += "</div>";
+      var t2 = fitnessTier(d);
       html += '<div class="tier-preview"><span class="eyebrow">Your starting level</span>' +
-        "<h2>Tier " + t.n + " · " + esc(t.name) + "</h2><p>" + esc(t.note) + "</p>" +
-        '<small>Capability score ' + t.score + " / 12</small></div>";
+        "<h2>Tier " + t2.n + " · " + esc(t2.name) + "</h2><p>" + esc(t2.note) + "</p><small>" +
+        (t2.answered ? "Score " + t2.score + " / " + t2.maxScore + " across " + t2.answered + " test" + (t2.answered === 1 ? "" : "s") : "No results entered yet") +
+        "</small></div>";
     }
 
     if (step === 3) {
+      d.lifts = d.lifts || {};
+      html += '<span class="eyebrow">Starting weights</span><h1>Estimate your lifts.</h1>' +
+        '<p class="lead">Roughly what could you lift for <strong>8 clean reps</strong> today? A best guess is fine — the app corrects itself from your first logged session. Leave blank for anything you’ve never done.</p>';
+      html += '<div class="test-list">';
+      RB.liftSeeds.forEach(function (L) {
+        html += '<label class="test-row"><div class="test-copy"><strong>' + esc(L.label) + "</strong><small>" + esc(L.hint) + "</small></div>" +
+          '<div class="test-input"><input type="number" inputmode="decimal" placeholder="135" value="' + esc(d.lifts[L.id] || "") +
+          '" data-action="ob-lift" data-lift="' + L.id + '" /><span>lb</span></div></label>';
+      });
+      html += "</div>";
+      var preview = [["back-squat", "Back squat"], ["db-bench", "DB bench press (per hand)"], ["cs-row", "Chest-supported row"],
+        ["trap-deadlift", "Trap-bar deadlift"], ["ohp", "Overhead press"]];
+      var rows = [];
+      preview.forEach(function (pi) {
+        var map = RB.seedMap[pi[0]];
+        var base = map ? toNum(d.lifts[map.s]) : 0;
+        if (base) rows.push(pi[1] + " — " + roundLoad(base * map.f) + " lb");
+      });
+      if (rows.length) {
+        html += '<div class="tier-preview"><span class="eyebrow">Week 1 will start you at</span><ul class="seed-list">';
+        rows.forEach(function (r) { html += "<li>" + esc(r) + "</li>"; });
+        html += "</ul><small>Everything else starts from your first logged set, then climbs automatically.</small></div>";
+      }
+    }
+
+    if (step === 4) {
       html += '<span class="eyebrow">Goals & food</span><h1>What are you after?</h1>';
       html += '<h3 class="ob-sub">Primary goal</h3><div class="choice-grid">';
       RB.goals.forEach(function (g) { html += choiceBtn("goal", g.id, g.label, d.goal, g.desc); });
@@ -554,7 +629,7 @@
       }
     }
 
-    if (step === 4) {
+    if (step === 5) {
       if (!d.startDate) d.startDate = nextMondayISO();
       var prog = programById(d.program);
       var tier2 = fitnessTier(d);
@@ -573,7 +648,7 @@
 
     html += '<div class="ob-actions">';
     if (step > 0) html += '<button class="secondary-button" type="button" data-action="ob-back">Back</button>';
-    if (step < 4) html += '<button class="primary-button" type="button" data-action="ob-next">Continue</button>';
+    if (step < 5) html += '<button class="primary-button" type="button" data-action="ob-next">Continue</button>';
     else html += '<button class="primary-button" type="button" data-action="ob-finish">Start my program</button>';
     html += "</div></section>";
     return html;
@@ -1269,15 +1344,19 @@
         render();
         break;
       case "ob-select-program":
-        if (ui.draft) ui.draft.program = el.getAttribute("data-program");
-        render();
+        if (!ui.draft) ui.draft = clone(store.profile);
+        ui.draft.program = el.getAttribute("data-program");
+        // Tapping a card IS the choice — go straight on rather than making the
+        // user hunt for a Continue button below five long cards.
+        ui.onboardStep = 1;
+        render(); goTop();
         break;
       case "ob-choice":
         if (ui.draft) ui.draft[el.getAttribute("data-field")] = el.getAttribute("data-value");
         render();
         break;
       case "ob-next":
-        ui.onboardStep = Math.min(4, ui.onboardStep + 1);
+        ui.onboardStep = Math.min(5, ui.onboardStep + 1);
         render(); goTop();
         break;
       case "ob-back":
@@ -1424,6 +1503,13 @@
         if (ui.draft) ui.draft[el.getAttribute("data-field")] = el.value;
         // Refresh the live tier / calorie preview once the field is committed,
         // never mid-keystroke (that would steal focus).
+        if (e.type === "change") render();
+        break;
+      case "ob-lift":
+        if (ui.draft) {
+          ui.draft.lifts = ui.draft.lifts || {};
+          ui.draft.lifts[el.getAttribute("data-lift")] = el.value;
+        }
         if (e.type === "change") render();
         break;
       case "set-week":
