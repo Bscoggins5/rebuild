@@ -26,6 +26,8 @@
       lifts: {},
       goal: "lose",
       diet: "omnivore",
+      mealPrep: { breakfast: false, lunch: false, snack: false },
+      eatOutDays: [],
     },
   };
 
@@ -84,6 +86,8 @@
     store.benchmarks = Object.assign(clone(initialState.benchmarks), store.benchmarks || {});
     store.readiness = Object.assign(clone(initialState.readiness), store.readiness || {});
     store.profile = Object.assign(clone(initialState.profile), store.profile || {});
+    store.profile.mealPrep = Object.assign({ breakfast: false, lunch: false, snack: false }, store.profile.mealPrep || {});
+    if (!Array.isArray(store.profile.eatOutDays)) store.profile.eatOutDays = [];
     if (!Array.isArray(store.checkIns)) store.checkIns = [];
     ["workoutLogs", "runLogs", "completedWorkouts", "completedMeals", "shoppingChecks", "benchmarkLog", "exerciseSwaps"].forEach(function (k) {
       if (!store[k] || typeof store[k] !== "object") store[k] = {};
@@ -242,13 +246,20 @@
     var goal = goalById(p.goal);
     var cal = tdee * (1 + goal.calAdj);
     var protein = kg * goal.proteinPerKg;
-    var fat = kg * 0.9;
-    var carbs = Math.max(80, (cal - protein * 4 - fat * 9) / 4);
+    var fat, carbs;
+    if (dietById(p.diet).lowCarb) {
+      // Keto: cap carbs low, let fat fill the rest of the calories.
+      carbs = 35;
+      fat = Math.max(kg * 0.9, (cal - protein * 4 - carbs * 4) / 9);
+    } else {
+      fat = kg * 0.9;
+      carbs = Math.max(80, (cal - protein * 4 - fat * 9) / 4);
+    }
     return {
       bmr: Math.round(bmr), tdee: Math.round(tdee),
       calories: Math.round(cal / 10) * 10,
       protein: Math.round(protein), fat: Math.round(fat), carbs: Math.round(carbs),
-      fiber: Math.max(25, Math.round(cal / 1000 * 14)),
+      fiber: Math.max(20, Math.round(cal / 1000 * 14)),
     };
   }
 
@@ -330,37 +341,132 @@
       carbs: Math.round(m.carbs * f), fat: Math.round(m.fat * f), fiber: Math.round(m.fiber * f),
     };
   }
-  // The nutrition plan for a day, resized to the user's calorie target and
-  // rewritten for their dietary preference.
+  // Which meal slot a meal belongs to (from its timing label).
+  function slotOf(meal) {
+    var t = (meal.timing || "").toLowerCase();
+    if (t.indexOf("breakfast") !== -1) return "breakfast";
+    if (t.indexOf("lunch") !== -1) return "lunch";
+    if (t.indexOf("dinner") !== -1) return "dinner";
+    if (t.indexOf("snack") !== -1) return "snack";
+    return null;
+  }
+
+  // The nutrition plan for a day: resized to the calorie target, rewritten for
+  // the dietary preference, and adjusted for meal-prep and eat-out choices.
   function adaptedPlan(dayKey) {
     var base = RB.nutritionPlans[dayKey];
     var p = store.profile;
     var t = p.onboarded ? nutritionTargets(p) : null;
     var f = (t && base.macros.calories) ? t.calories / base.macros.calories : 1;
     var diet = p.diet || "omnivore";
+    var lowCarb = !!dietById(diet).lowCarb;
+    var eatingOut = p.eatOutDays.indexOf(dayKey) !== -1;
+
+    // Meal-prep: collapse each prepped slot to one canonical meal for the week.
+    var meals = base.meals.slice();
+    ["breakfast", "lunch", "snack"].forEach(function (slot) {
+      if (!p.mealPrep[slot]) return;
+      var prep = RB.prepMeals[slot], done = false;
+      meals = meals.map(function (m) {
+        if (slotOf(m) !== slot) return m;
+        if (done) return null;
+        done = true; return prep;
+      }).filter(Boolean);
+    });
+    // Eat-out: turn the dinner into a spend-your-macros budget.
+    if (eatingOut) {
+      meals = meals.map(function (m) {
+        return slotOf(m) === "dinner" ? { id: m.id, timing: m.timing, macros: m.macros, eatOut: true } : m;
+      });
+    }
+
+    var near = Math.abs(f - 1) < 0.02;
+    function adapt(meal) {
+      if (meal.eatOut) {
+        return { id: meal.id, name: "Eating out", timing: meal.timing, slot: "dinner", eatOut: true,
+          adapted: false, macros: near ? meal.macros : scaleMacros(meal.macros, f), ingredients: [], familyRecipe: null };
+      }
+      var renamed = (RB.mealNames[diet] && RB.mealNames[diet][meal.id]) || meal.name;
+      return {
+        id: meal.id, name: renamed, timing: meal.timing, note: meal.note, slot: slotOf(meal),
+        adapted: mealIsAdapted(meal, diet),
+        macros: near ? meal.macros : scaleMacros(meal.macros, f),
+        ingredients: meal.ingredients.map(function (ing) { return applyDietToIngredient(scaleAmounts(ing, f), diet); }),
+        familyRecipe: meal.familyRecipe ? {
+          yield: meal.familyRecipe.yield, steps: meal.familyRecipe.steps,
+          ingredients: meal.familyRecipe.ingredients.map(function (ing) { return applyDietToIngredient(ing, diet); }),
+        } : null,
+      };
+    }
+
+    var dayMacros = near ? base.macros : scaleMacros(base.macros, f);
+    // Keto's day totals come from the low-carb target, not the (still carb-heavy)
+    // scaled base — the per-meal cards stay approximate, flagged in the UI.
+    if (lowCarb && t) dayMacros = { calories: t.calories, protein: t.protein, carbs: t.carbs, fat: t.fat, fiber: t.fiber };
+
     return {
-      focus: base.focus, fuel: base.fuel,
-      factor: f, targets: t, diet: diet,
-      macros: Math.abs(f - 1) < 0.02 ? base.macros : scaleMacros(base.macros, f),
-      meals: base.meals.map(function (meal) {
-        var renamed = (RB.mealNames[diet] && RB.mealNames[diet][meal.id]) || meal.name;
-        return {
-          id: meal.id, name: renamed, timing: meal.timing, note: meal.note,
-          adapted: mealIsAdapted(meal, diet),
-          macros: Math.abs(f - 1) < 0.02 ? meal.macros : scaleMacros(meal.macros, f),
-          ingredients: meal.ingredients.map(function (ing) {
-            return applyDietToIngredient(scaleAmounts(ing, f), diet);
-          }),
-          familyRecipe: meal.familyRecipe ? {
-            yield: meal.familyRecipe.yield,
-            steps: meal.familyRecipe.steps,
-            ingredients: meal.familyRecipe.ingredients.map(function (ing) {
-              return applyDietToIngredient(ing, diet);
-            }),
-          } : null,
-        };
-      }),
+      focus: base.focus, fuel: base.fuel, factor: f, targets: t, diet: diet,
+      lowCarb: lowCarb, eatingOut: eatingOut, macros: dayMacros, meals: meals.map(adapt),
     };
+  }
+
+  // ---- generated shopping list ----
+  function foodCategoryFor(food) {
+    var lower = food.toLowerCase();
+    var keys = Object.keys(RB.foodCategory).sort(function (a, b) { return b.length - a.length; });
+    for (var i = 0; i < keys.length; i++) if (lower.indexOf(keys[i]) !== -1) return RB.foodCategory[keys[i]];
+    return "Other";
+  }
+  // Canonical grocery name (merges variants), or null for non-grocery lines.
+  function canonicalFood(food) {
+    if (/^water\b/i.test(food) || /\bas desired\b/i.test(food)) return null;
+    var lower = food.toLowerCase();
+    var al = RB.foodAliases || [];
+    for (var i = 0; i < al.length; i++) if (lower.indexOf(al[i].k) !== -1) return al[i].name;
+    return food;
+  }
+  // "Brown rice — 240 g dry (about 1⅓ cups)" -> { food, grams }
+  function parseIngredient(line) {
+    var parts = String(line).split("—");
+    var food = parts[0].trim();
+    var rest = parts.slice(1).join("—").replace(/(\d),(\d)/g, "$1$2"); // 1,000 -> 1000
+    var g = rest.match(/(\d+(?:\.\d+)?)\s*g\b/);
+    var ml = rest.match(/(\d+(?:\.\d+)?)\s*ml\b/);
+    return { food: canonicalFood(food), grams: g ? parseFloat(g[1]) : (ml ? parseFloat(ml[1]) : 0) };
+  }
+  // Aggregate every planned meal into a categorized buy list. Dinners use the
+  // family-recipe (buy) quantities; breakfast/lunch/snack use per-day portions,
+  // so meal-prep (7× one meal) and eat-out (dinner dropped) fall out naturally.
+  function buildShoppingList() {
+    var agg = {};
+    ["mon", "tue", "wed", "thu", "fri", "sat", "sun"].forEach(function (dk) {
+      adaptedPlan(dk).meals.forEach(function (meal) {
+        if (meal.eatOut) return;
+        var lines = (meal.slot === "dinner" && meal.familyRecipe) ? meal.familyRecipe.ingredients : meal.ingredients;
+        (lines || []).forEach(function (line) {
+          var pi = parseIngredient(line);
+          if (!pi.food) return;
+          if (!agg[pi.food]) agg[pi.food] = { grams: 0, count: 0, category: foodCategoryFor(pi.food) };
+          if (pi.grams > 0) agg[pi.food].grams += pi.grams; else agg[pi.food].count += 1;
+        });
+      });
+    });
+    var order = ["Protein & dairy", "Carbohydrates", "Produce", "Sauces & pantry", "Other"];
+    var groups = {};
+    Object.keys(agg).forEach(function (food) {
+      var it = agg[food];
+      (groups[it.category] = groups[it.category] || []).push({ food: food, grams: it.grams, count: it.count });
+    });
+    return order.filter(function (c) { return groups[c]; }).map(function (c) {
+      return { category: c, items: groups[c].sort(function (a, b) { return a.food.localeCompare(b.food); }) };
+    });
+  }
+  function shopAmount(item) {
+    if (item.grams > 0) {
+      var g = Math.ceil(item.grams / 50) * 50; // round up to the nearest 50 g
+      return g >= 1000 ? (Math.round(g / 100) / 10) + " kg" : g + " g";
+    }
+    return "×" + item.count;
   }
 
   function todayKey() {
@@ -1050,12 +1156,44 @@
     return '<option value="' + v + '"' + (current === v ? " selected" : "") + ">" + v + "</option>";
   }
 
+  // Meal settings: diet, meal-prep and eat-out nights.
+  function renderMealSetup() {
+    var p = store.profile;
+    var html = '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Dietary preference</span><h2>Diet</h2></div></div><div class="choice-grid">';
+    RB.diets.forEach(function (dt) {
+      html += '<button type="button" class="choice-btn' + (p.diet === dt.id ? " active" : "") + '" data-action="set-diet" data-diet="' + dt.id + '"><strong>' + esc(dt.label) + "</strong><small>" + esc(dt.desc) + "</small></button>";
+    });
+    html += "</div></section>";
+
+    html += '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Meal prep</span><h2>Repeat a meal</h2></div></div>' +
+      '<p class="setup-hint">Turn one on to eat the same breakfast, lunch or snack every day — easier to batch-cook. Dinner stays varied.</p><div class="prep-toggles">';
+    [["breakfast", "Breakfast", RB.prepMeals.breakfast.name], ["lunch", "Lunch", RB.prepMeals.lunch.name], ["snack", "Snack", RB.prepMeals.snack.name]].forEach(function (row) {
+      var on = p.mealPrep[row[0]];
+      html += '<button type="button" class="toggle-row' + (on ? " on" : "") + '" data-action="toggle-mealprep" data-slot="' + row[0] + '"><div><strong>' + esc(row[1]) + "</strong><small>" + esc(on ? row[2] : "Varied — a different one each day") + "</small></div><span class=\"toggle-pill\">" + (on ? "On" : "Off") + "</span></button>";
+    });
+    html += "</div></section>";
+
+    html += '<section class="section-block"><div class="section-heading"><div><span class="eyebrow">Eating out</span><h2>Nights out</h2></div></div>' +
+      '<p class="setup-hint">Tap the nights you plan to eat out. Those dinners become a macro budget and drop off the shopping list.</p><div class="day-picker">';
+    RB.days.forEach(function (dd) {
+      var on = p.eatOutDays.indexOf(dd.key) !== -1;
+      html += '<button type="button" class="day-button' + (on ? " selected" : "") + '" data-action="toggle-eatout" data-day="' + dd.key + '" aria-pressed="' + on + '">' + esc(dd.short) + "</button>";
+    });
+    html += "</div>";
+    if (p.eatOutDays.length) html += '<p class="setup-hint">' + p.eatOutDays.length + " night" + (p.eatOutDays.length > 1 ? "s" : "") + " out selected.</p>";
+    html += "</section>";
+    return html;
+  }
+
   function renderNutrition() {
     var html = '<section class="screen" aria-labelledby="nutrition-heading">';
     html += '<div class="screen-title-row"><div><span class="eyebrow">Measured, repeatable, family-friendly</span><h1 id="nutrition-heading">Nutrition</h1></div></div>';
-    html += '<div class="segmented">' +
+    html += '<div class="segmented three">' +
       '<button type="button" class="' + (ui.nutritionMode === "plan" ? "active" : "") + '" data-action="nutrition-mode" data-mode="plan">Daily plan</button>' +
-      '<button type="button" class="' + (ui.nutritionMode === "shopping" ? "active" : "") + '" data-action="nutrition-mode" data-mode="shopping">Sunday list</button></div>';
+      '<button type="button" class="' + (ui.nutritionMode === "shopping" ? "active" : "") + '" data-action="nutrition-mode" data-mode="shopping">Sunday list</button>' +
+      '<button type="button" class="' + (ui.nutritionMode === "setup" ? "active" : "") + '" data-action="nutrition-mode" data-mode="setup">Setup</button></div>';
+
+    if (ui.nutritionMode === "setup") { html += renderMealSetup(); html += "</section>"; return html; }
 
     if (ui.nutritionMode === "plan") {
       var day = ui.nutritionDay;
@@ -1065,8 +1203,12 @@
       // Say plainly how this plan was personalized.
       var adaptBits = [];
       if (Math.abs(plan.factor - 1) >= 0.02) adaptBits.push("Portions scaled to " + Math.round(plan.factor * 100) + "% of the base plan to hit your " + (plan.targets ? plan.targets.calories.toLocaleString() + " kcal" : "calorie") + " target.");
-      if (plan.diet && plan.diet !== "omnivore") adaptBits.push("Protein sources swapped for your " + dietById(plan.diet).label.toLowerCase() + " preference — portions are matched on protein, so calories and fat shift a little. Check labels.");
+      if (plan.diet && plan.diet !== "omnivore") adaptBits.push("Foods swapped for your " + dietById(plan.diet).label.toLowerCase() + " preference — portions matched where possible, so calories and fat shift a little. Check labels.");
+      var mpSlots = ["breakfast", "lunch", "snack"].filter(function (s) { return store.profile.mealPrep[s]; });
+      if (mpSlots.length) adaptBits.push("Meal-prep on for " + mpSlots.join(", ") + " — the same one repeats every day.");
       if (adaptBits.length) html += '<div class="progression-note">' + esc(adaptBits.join(" ")) + "</div>";
+      if (plan.eatingOut) html += '<div class="progression-note">You’re eating out tonight — dinner is a macro budget below, and its ingredients are left off the shopping list.</div>';
+      if (plan.lowCarb) html += '<div class="gap-note"><strong>Keto is an approximation</strong><p>The totals above are your low-carb target. The meal cards still list the original carb-based portions as a guide — follow the food swaps, keep total carbs low, and treat the per-meal macros loosely.</p></div>';
       // Never show a protein target next to a plan that misses it without saying so.
       if (plan.targets) {
         var gap = plan.targets.protein - plan.macros.protein;
@@ -1085,6 +1227,12 @@
 
       html += '<div class="meal-stack">';
       plan.meals.forEach(function (meal) {
+        if (meal.eatOut) {
+          html += '<article class="meal-card eat-out-card"><div class="meal-heading"><div><span>' + esc(meal.timing) + '</span><h2>Eating out 🍽️</h2></div></div>' +
+            macroLine(meal.macros) +
+            '<p class="meal-note">A rough target for your meal out: a lean protein, one starchy or veg side, and go easy on oil, cheese, bread baskets and sugary drinks. Close is fine.</p></article>';
+          return;
+        }
         // Keyed by weekday + meal only — nutrition plans are the same every
         // week and the Nutrition tab has no week context, so a meal check must
         // not depend on which training week is selected elsewhere.
@@ -1111,16 +1259,27 @@
 
       html += '<div class="target-note"><strong>Calibration target</strong><p>Follow these portions for 14 full days, then review your average morning weight and waist. If weight and waist are both flat for two review periods with at least 80% adherence, reduce 150 calories or add 1,500–2,000 daily steps—not both.</p></div>';
     } else {
-      html += '<article class="shopping-intro"><span class="eyebrow">One Sunday trip</span><h2>Exact weekly shopping list</h2><p>Breakfasts, lunches, snacks, and seven four-serving family dinners are included. The dinner quantities are intentionally generous so younger children can eat smaller portions and leave leftovers.</p></article>';
-      RB.shoppingList.forEach(function (group) {
+      var list = buildShoppingList();
+      var pmSlots = ["breakfast", "lunch", "snack"].filter(function (s) { return store.profile.mealPrep[s]; });
+      var eo = store.profile.eatOutDays;
+      var intro = "Built from your actual plan";
+      if (store.profile.diet !== "omnivore") intro += " (" + dietById(store.profile.diet).label.toLowerCase() + ")";
+      if (pmSlots.length) intro += ", with " + pmSlots.join("/") + " meal-prepped";
+      if (eo.length) intro += ", skipping " + eo.length + " eat-out night" + (eo.length > 1 ? "s" : "");
+      intro += ". Quantities are estimates — round up, and sanity-check counts like eggs, cans and bread.";
+      html += '<article class="shopping-intro"><span class="eyebrow">One Sunday trip</span><h2>Your weekly shopping list</h2><p>' + esc(intro) + "</p></article>";
+      var total = 0;
+      list.forEach(function (group) {
         html += '<section class="shopping-group"><div class="section-heading"><h2>' + esc(group.category) + "</h2><span>" + group.items.length + " items</span></div>";
-        group.items.forEach(function (pair, index) {
-          var key = group.category + ":" + index;
+        group.items.forEach(function (item) {
+          var key = "g:" + item.food;
           var checked = Boolean(store.shoppingChecks[key]);
-          html += '<label class="shopping-item' + (checked ? " checked" : "") + '" data-shop="' + esc(key) + '"><input type="checkbox"' + (checked ? " checked" : "") + ' data-action="shop-check" data-key="' + esc(key) + '" /><span class="shopping-check">✓</span><span><strong>' + esc(pair[0]) + "</strong><small>" + esc(pair[1]) + "</small></span></label>";
+          total++;
+          html += '<label class="shopping-item' + (checked ? " checked" : "") + '" data-shop="' + esc(key) + '"><input type="checkbox"' + (checked ? " checked" : "") + ' data-action="shop-check" data-key="' + esc(key) + '" /><span class="shopping-check">✓</span><span><strong>' + esc(item.food) + "</strong><small>~" + esc(shopAmount(item)) + " for the week</small></span></label>";
         });
         html += "</section>";
       });
+      if (!total) html += '<div class="empty-state">Finish your setup to generate a list.</div>';
       html += '<button class="secondary-button" type="button" data-action="reset-shopping">Reset shopping checks</button>';
     }
 
@@ -1622,6 +1781,27 @@
         ui.nutritionMode = el.getAttribute("data-mode");
         render();
         break;
+      case "set-diet":
+        store.profile.diet = el.getAttribute("data-diet");
+        save();
+        render();
+        toast(dietById(store.profile.diet).label + " selected.");
+        break;
+      case "toggle-mealprep": {
+        var slot = el.getAttribute("data-slot");
+        store.profile.mealPrep[slot] = !store.profile.mealPrep[slot];
+        save();
+        render();
+        break;
+      }
+      case "toggle-eatout": {
+        var edk = el.getAttribute("data-day");
+        var idx = store.profile.eatOutDays.indexOf(edk);
+        if (idx === -1) store.profile.eatOutDays.push(edk); else store.profile.eatOutDays.splice(idx, 1);
+        save();
+        render();
+        break;
+      }
       case "ob-select-program":
         if (!ui.draft) ui.draft = clone(store.profile);
         ui.draft.program = el.getAttribute("data-program");

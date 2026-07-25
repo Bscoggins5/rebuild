@@ -499,6 +499,8 @@ RB.diets = [
   { id: "pescatarian", label: "Pescatarian", desc: "Fish and seafood, no other meat." },
   { id: "vegetarian", label: "Vegetarian", desc: "No meat or fish; dairy and eggs are fine." },
   { id: "vegan", label: "Vegan", desc: "No animal products at all." },
+  { id: "keto", label: "Keto", desc: "Very low carb, high fat. Grains, starches and sugar swapped out.", lowCarb: true },
+  { id: "paleo", label: "Paleo", desc: "No grains, legumes or dairy. Meat, fish, eggs, veg and fruit." },
 ];
 
 // Protein swaps applied to meal ingredients when the diet excludes an item.
@@ -558,6 +560,56 @@ RB.dietSwaps = {
     "cheese": { name: "Plant-based cheese", p: 5, keepAmount: true },
     "honey": { name: "Maple syrup", keepAmount: true },
   },
+  // Keto swaps out grains, starches and sugar; full-fat dairy and meat stay.
+  keto: {
+    "brown rice": { name: "Cauliflower rice", keepAmount: true },
+    "whole-wheat pasta": { name: "Zucchini or shirataki noodles", keepAmount: true },
+    "whole-grain pasta": { name: "Zucchini or shirataki noodles", keepAmount: true },
+    "old-fashioned oats": { name: "Ground flax & chia", keepAmount: true },
+    "whole-grain bread": { name: "Almond-flour / keto bread", keepAmount: true },
+    "whole-grain toast": { name: "Almond-flour / keto toast", keepAmount: true },
+    "whole-grain bun": { name: "Lettuce bun or portobello", keepAmount: true },
+    "medium tortillas": { name: "Low-carb tortillas or lettuce wraps", keepAmount: true },
+    "roasted potatoes": { name: "Roasted cauliflower & zucchini", keepAmount: true },
+    "baby potatoes": { name: "Cauliflower", keepAmount: true },
+    "frozen oven fries": { name: "Roasted turnip / cauliflower fries", keepAmount: true },
+    "oven fries": { name: "Roasted turnip / cauliflower fries", keepAmount: true },
+    "granola": { name: "Nuts & seeds", keepAmount: true },
+    "banana": { name: "Berries (small handful)", keepAmount: true },
+    "black beans": { name: "Extra non-starchy veg", keepAmount: true },
+    "kidney beans": { name: "Extra non-starchy veg", keepAmount: true },
+    "shelled edamame": { name: "Extra green veg", keepAmount: true },
+    "corn": { name: "Diced bell pepper", keepAmount: true },
+    "honey": { name: "Sugar-free syrup", keepAmount: true },
+    "cornbread": { name: "Almond-flour biscuit", keepAmount: true },
+    "2% milk": { name: "Unsweetened almond milk", keepAmount: true },
+    "teriyaki sauce": { name: "Coconut aminos / sugar-free teriyaki", keepAmount: true },
+  },
+  // Paleo removes grains, legumes and dairy; meat, fish, eggs, fruit, honey stay.
+  paleo: {
+    "brown rice": { name: "Cauliflower rice or sweet potato", keepAmount: true },
+    "whole-wheat pasta": { name: "Spaghetti squash or zoodles", keepAmount: true },
+    "whole-grain pasta": { name: "Spaghetti squash or zoodles", keepAmount: true },
+    "old-fashioned oats": { name: "Sweet-potato hash or plantain", keepAmount: true },
+    "whole-grain bread": { name: "Sweet potato or paleo bread", keepAmount: true },
+    "whole-grain toast": { name: "Sweet potato or paleo toast", keepAmount: true },
+    "whole-grain bun": { name: "Lettuce bun or sweet-potato bun", keepAmount: true },
+    "medium tortillas": { name: "Cassava tortillas or lettuce wraps", keepAmount: true },
+    "granola": { name: "Nuts & seeds (grain-free)", keepAmount: true },
+    "black beans": { name: "Extra roasted veg", keepAmount: true },
+    "kidney beans": { name: "Extra roasted veg", keepAmount: true },
+    "shelled edamame": { name: "Green beans or extra veg", keepAmount: true },
+    "corn": { name: "Diced carrot / pepper", keepAmount: true },
+    "cornbread": { name: "Almond-flour biscuit", keepAmount: true },
+    "peanut butter": { name: "Almond butter", keepAmount: true },
+    "greek yogurt": { name: "Coconut yogurt", keepAmount: true },
+    "cottage cheese": { name: "Blended cashews / coconut yogurt", keepAmount: true },
+    "2% milk": { name: "Coconut or almond milk", keepAmount: true },
+    "whey protein": { name: "Egg-white or beef protein", keepAmount: true },
+    "parmesan": { name: "Nutritional yeast (or skip)", keepAmount: true },
+    "cheese": { name: "Avocado (skip cheese)", keepAmount: true },
+    "teriyaki sauce": { name: "Coconut aminos", keepAmount: true },
+  },
 };
 
 // Meal titles rewritten so the name matches what's actually on the plate.
@@ -589,6 +641,70 @@ RB.mealNames = {
     "fajita-dinner": "Tofu fajitas", "cottage-snack": "Silken tofu, apple & granola",
     "chili-dinner": "Plant chili & cornbread",
   },
+  keto: {
+    "egg-oat-breakfast": "Eggs, flax & berries", "yogurt-oat-breakfast": "Greek yogurt & berry bowl",
+    "chicken-rice-120": "Chicken & cauli-rice bowl", "chicken-rice-90": "Chicken & cauli-rice bowl",
+    "tuna-rice-lunch": "Tuna & cauli-rice bowl", "taco-bowl": "Turkey taco bowls (cauli-rice)",
+    "sheet-pan-chicken": "Sheet-pan chicken & roasted veg", "spaghetti-dinner": "Meat sauce over zoodles",
+    "shrimp-stir-fry": "Shrimp stir-fry (cauli-rice)", "burger-dinner": "Bunless burger & cauli-fries",
+    "fajita-dinner": "Chicken fajita bowls (low-carb)", "chili-dinner": "Turkey chili (no beans)",
+    "yogurt-granola-snack": "Greek yogurt, berries & nuts", "cottage-snack": "Cottage cheese & nuts",
+  },
+  paleo: {
+    "egg-oat-breakfast": "Eggs, sweet potato & berries", "yogurt-oat-breakfast": "Coconut yogurt & fruit bowl",
+    "chicken-rice-120": "Chicken & cauli-rice bowl", "chicken-rice-90": "Chicken & cauli-rice bowl",
+    "tuna-rice-lunch": "Tuna & sweet-potato bowl", "taco-bowl": "Turkey taco bowls (no beans)",
+    "sheet-pan-chicken": "Sheet-pan chicken & sweet potato", "spaghetti-dinner": "Meat sauce over spaghetti squash",
+    "shrimp-stir-fry": "Shrimp & veg stir-fry", "burger-dinner": "Lettuce-wrap burger & sweet-potato fries",
+    "fajita-dinner": "Chicken fajitas (lettuce wraps)", "chili-dinner": "Turkey chili (no beans)",
+    "yogurt-granola-snack": "Coconut yogurt & fruit", "cottage-snack": "Coconut yogurt, apple & nuts",
+    "yogurt-whey-banana": "Coconut yogurt & fruit",
+  },
+};
+
+// Merge foods that different meals write slightly differently, so the shopping
+// list doesn't list them twice. Matched as a lowercase substring of the food.
+RB.foodAliases = [
+  { k: "greek yogurt", name: "Greek yogurt" },
+  { k: "kidney beans", name: "Black / kidney beans" },
+  { k: "black beans", name: "Black / kidney beans" },
+  { k: "mixed berries", name: "Berries" },
+  { k: "blueberries", name: "Berries" },
+  { k: "apples", name: "Apple" },
+  { k: "whole-grain toast", name: "Whole-grain bread" },
+  { k: "whole-grain bread", name: "Whole-grain bread" },
+  { k: "olive oil", name: "Cooking oil" },
+  { k: "avocado oil", name: "Cooking oil" },
+  { k: "oil", name: "Cooking oil" },
+];
+
+// Food -> shopping category, for the generated Sunday list. Keys are matched as
+// lowercase substrings of the food name (before the "—"), longest first.
+RB.foodCategory = {
+  "chicken breast": "Protein & dairy", "ground turkey": "Protein & dairy", "ground beef": "Protein & dairy",
+  "beef patty": "Protein & dairy", "deli turkey": "Protein & dairy", "shrimp": "Protein & dairy",
+  "tuna": "Protein & dairy", "salmon": "Protein & dairy", "white fish": "Protein & dairy",
+  "eggs": "Protein & dairy", "egg whites": "Protein & dairy", "greek yogurt": "Protein & dairy",
+  "cottage cheese": "Protein & dairy", "whey protein": "Protein & dairy", "protein isolate": "Protein & dairy",
+  "milk": "Protein & dairy", "cheese": "Protein & dairy", "parmesan": "Protein & dairy",
+  "tofu": "Protein & dairy", "tempeh": "Protein & dairy", "plant mince": "Protein & dairy",
+  "edamame": "Protein & dairy", "coconut yogurt": "Protein & dairy", "soy yogurt": "Protein & dairy",
+  "oats": "Carbohydrates", "flax": "Carbohydrates", "rice": "Carbohydrates", "cauliflower rice": "Produce",
+  "pasta": "Carbohydrates", "noodles": "Carbohydrates", "bread": "Carbohydrates", "toast": "Carbohydrates",
+  "bun": "Carbohydrates", "tortillas": "Carbohydrates", "potato": "Carbohydrates", "sweet potato": "Produce",
+  "fries": "Carbohydrates", "granola": "Carbohydrates", "cornbread": "Carbohydrates", "biscuit": "Carbohydrates",
+  "beans": "Carbohydrates", "chickpea": "Carbohydrates", "nuts": "Sauces & pantry", "seeds": "Sauces & pantry",
+  "protein": "Protein & dairy", "cashews": "Protein & dairy",
+  "berries": "Produce", "banana": "Produce", "apple": "Produce", "avocado": "Produce",
+  "vegetables": "Produce", "veg": "Produce", "broccoli": "Produce", "peppers": "Produce", "pepper": "Produce",
+  "onions": "Produce", "salad": "Produce", "tomatoes": "Produce", "corn": "Produce", "zucchini": "Produce",
+  "carrot": "Produce", "squash": "Produce", "zoodles": "Produce", "cauliflower": "Produce", "plantain": "Produce", "hash": "Produce",
+  "yeast": "Sauces & pantry", "aminos": "Sauces & pantry",
+  "olive oil": "Sauces & pantry", "avocado oil": "Sauces & pantry", "cooking oil": "Sauces & pantry", "teriyaki": "Sauces & pantry",
+  "coconut aminos": "Sauces & pantry", "salsa": "Sauces & pantry", "marinara": "Sauces & pantry",
+  "tzatziki": "Sauces & pantry", "honey": "Sauces & pantry", "syrup": "Sauces & pantry",
+  "peanut butter": "Sauces & pantry", "almond butter": "Sauces & pantry", "almond milk": "Protein & dairy",
+  "coconut milk": "Protein & dairy",
 };
 
 // ---- Equipment swaps ----
@@ -847,6 +963,10 @@ var yogurtSnack = {
     "Banana — 118 g edible portion (1 medium)",
   ],
 };
+
+// Canonical meals used when meal-prep is on for a slot (defined here, after the
+// shared meal objects exist, so the references aren't undefined).
+RB.prepMeals = { breakfast: eggBreakfast, lunch: chickenLunch120, snack: yogurtSnack };
 
 var wheyBananaSnack = {
   id: "whey-banana",
